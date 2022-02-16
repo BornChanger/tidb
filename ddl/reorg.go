@@ -477,7 +477,7 @@ func (dc *ddlCtx) GetTableMaxHandle(startTS uint64, tbl table.PhysicalTable) (ma
 	switch {
 	case tblInfo.PKIsHandle:
 		for _, col := range tbl.Meta().Columns {
-			if mysql.HasPriKeyFlag(col.Flag) {
+			if mysql.HasPriKeyFlag(col.GetFlag()) {
 				handleCols = []*model.ColumnInfo{col}
 				break
 			}

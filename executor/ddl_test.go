@@ -144,8 +144,8 @@ func (s *testSuite6) TestCreateTable(c *C) {
 	tk.MustExec("create table test_multiple_column_collate (a char(1) collate utf8_bin collate utf8_general_ci) charset utf8mb4 collate utf8mb4_bin")
 	t, err := domain.GetDomain(tk.Se).InfoSchema().TableByName(model.NewCIStr("test"), model.NewCIStr("test_multiple_column_collate"))
 	c.Assert(err, IsNil)
-	c.Assert(t.Cols()[0].Charset, Equals, "utf8")
-	c.Assert(t.Cols()[0].Collate, Equals, "utf8_general_ci")
+	c.Assert(t.Cols()[0].GetCharset(), Equals, "utf8")
+	c.Assert(t.Cols()[0].GetCollate(), Equals, "utf8_general_ci")
 	c.Assert(t.Meta().Charset, Equals, "utf8mb4")
 	c.Assert(t.Meta().Collate, Equals, "utf8mb4_bin")
 
@@ -153,8 +153,8 @@ func (s *testSuite6) TestCreateTable(c *C) {
 	tk.MustExec("create table test_multiple_column_collate (a char(1) charset utf8 collate utf8_bin collate utf8_general_ci) charset utf8mb4 collate utf8mb4_bin")
 	t, err = domain.GetDomain(tk.Se).InfoSchema().TableByName(model.NewCIStr("test"), model.NewCIStr("test_multiple_column_collate"))
 	c.Assert(err, IsNil)
-	c.Assert(t.Cols()[0].Charset, Equals, "utf8")
-	c.Assert(t.Cols()[0].Collate, Equals, "utf8_general_ci")
+	c.Assert(t.Cols()[0].GetCharset(), Equals, "utf8")
+	c.Assert(t.Cols()[0].GetCollate(), Equals, "utf8_general_ci")
 	c.Assert(t.Meta().Charset, Equals, "utf8mb4")
 	c.Assert(t.Meta().Collate, Equals, "utf8mb4_bin")
 
@@ -640,8 +640,8 @@ func (s *testSuite6) TestAlterTableModifyColumn(c *C) {
 	c.Assert(err, IsNil)
 	t, err := domain.GetDomain(tk.Se).InfoSchema().TableByName(model.NewCIStr("test"), model.NewCIStr("modify_column_multiple_collate"))
 	c.Assert(err, IsNil)
-	c.Assert(t.Cols()[0].Charset, Equals, "utf8mb4")
-	c.Assert(t.Cols()[0].Collate, Equals, "utf8mb4_bin")
+	c.Assert(t.Cols()[0].GetCharset(), Equals, "utf8mb4")
+	c.Assert(t.Cols()[0].GetCollate(), Equals, "utf8mb4_bin")
 	c.Assert(t.Meta().Charset, Equals, "utf8mb4")
 	c.Assert(t.Meta().Collate, Equals, "utf8mb4_bin")
 
@@ -651,8 +651,8 @@ func (s *testSuite6) TestAlterTableModifyColumn(c *C) {
 	c.Assert(err, IsNil)
 	t, err = domain.GetDomain(tk.Se).InfoSchema().TableByName(model.NewCIStr("test"), model.NewCIStr("modify_column_multiple_collate"))
 	c.Assert(err, IsNil)
-	c.Assert(t.Cols()[0].Charset, Equals, "utf8mb4")
-	c.Assert(t.Cols()[0].Collate, Equals, "utf8mb4_bin")
+	c.Assert(t.Cols()[0].GetCharset(), Equals, "utf8mb4")
+	c.Assert(t.Cols()[0].GetCollate(), Equals, "utf8mb4_bin")
 	c.Assert(t.Meta().Charset, Equals, "utf8mb4")
 	c.Assert(t.Meta().Collate, Equals, "utf8mb4_bin")
 
@@ -745,8 +745,8 @@ func (s *testSuite6) TestColumnCharsetAndCollate(c *C) {
 
 			tb, err := is.TableByName(model.NewCIStr(dbName), model.NewCIStr(tblName))
 			c.Assert(err, IsNil)
-			c.Assert(tb.Meta().Columns[0].Charset, Equals, tt.exptCharset, Commentf(sql))
-			c.Assert(tb.Meta().Columns[0].Collate, Equals, tt.exptCollate, Commentf(sql))
+			c.Assert(tb.Meta().Columns[0].GetCharset(), Equals, tt.exptCharset, Commentf(sql))
+			c.Assert(tb.Meta().Columns[0].GetCollate(), Equals, tt.exptCollate, Commentf(sql))
 		} else {
 			_, err := tk.Exec(sql)
 			c.Assert(err, NotNil, Commentf(sql))

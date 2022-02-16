@@ -851,7 +851,7 @@ func (s *testDDLSerialSuiteToVerify) TestCancelJob() {
 	// create a partition table.
 	partitionTblInfo := testTableInfoWithPartition(s.T(), d, "t_partition", 5)
 	// Skip using sessPool. Make sure adding primary key can be successful.
-	partitionTblInfo.Columns[0].Flag |= mysql.NotNullFlag
+	partitionTblInfo.Columns[0].AddFlag(mysql.NotNullFlag)
 	// create table t (c1 int, c2 int, c3 int, c4 int, c5 int);
 	tblInfo, err := testTableInfo(d, "t", 5)
 	require.NoError(s.T(), err)
@@ -971,7 +971,7 @@ func (s *testDDLSerialSuiteToVerify) TestCancelJob() {
 	addingColName := "colA"
 	newColumnDef := &ast.ColumnDef{
 		Name:    &ast.ColumnName{Name: model.NewCIStr(addingColName)},
-		Tp:      &types.FieldType{Tp: mysql.TypeLonglong},
+		Tp:      types.NewFieldTypeBuilderP().SetType(mysql.TypeLonglong).BuildP(),
 		Options: []*ast.ColumnOption{},
 	}
 	chs, coll := charset.GetDefaultCharsetAndCollate()
@@ -1063,8 +1063,8 @@ func (s *testDDLSerialSuiteToVerify) TestCancelJob() {
 	require.Nil(s.T(), changedCol.DefaultValue)
 
 	// modify delete-only-state column,
-	col.FieldType.Tp = mysql.TypeTiny
-	col.FieldType.Flen--
+	col.FieldType.SetType(mysql.TypeTiny)
+	col.FieldType.SetFlen(col.FieldType.GetFlen() - 1)
 	updateTest(&tests[16])
 	modifyColumnArgs = []interface{}{col, col.Name, &ast.ColumnPosition{}, byte(0), uint64(0)}
 	cancelState = model.StateNone
@@ -1072,9 +1072,9 @@ func (s *testDDLSerialSuiteToVerify) TestCancelJob() {
 	require.NoError(s.T(), checkErr)
 	changedTable = testGetTable(s.T(), d, dbInfo.ID, tblInfo.ID)
 	changedCol = model.FindColumnInfo(changedTable.Meta().Columns, col.Name.L)
-	require.Equal(s.T(), changedCol.FieldType.Tp, mysql.TypeLonglong)
-	require.Equal(s.T(), changedCol.FieldType.Flen, col.FieldType.Flen+1)
-	col.FieldType.Flen++
+	require.Equal(s.T(), changedCol.FieldType.GetType(), mysql.TypeLonglong)
+	require.Equal(s.T(), changedCol.FieldType.GetFlen(), col.FieldType.GetFlen()+1)
+	col.FieldType.SetFlen(col.FieldType.GetFlen() + 1)
 
 	// Test add foreign key failed cause by canceled.
 	updateTest(&tests[17])
@@ -1220,7 +1220,7 @@ func (s *testDDLSerialSuiteToVerify) TestCancelJob() {
 	for i, addingColName := range addingColNames {
 		newColumnDef := &ast.ColumnDef{
 			Name:    &ast.ColumnName{Name: model.NewCIStr(addingColName)},
-			Tp:      &types.FieldType{Tp: mysql.TypeLonglong},
+			Tp:      types.NewFieldTypeBuilderP().SetType(mysql.TypeLonglong).BuildP(),
 			Options: []*ast.ColumnOption{},
 		}
 		col, _, err := buildColumnAndConstraint(ctx, 0, newColumnDef, nil, mysql.DefaultCharset, "")
@@ -1364,8 +1364,8 @@ func (s *testDDLSerialSuiteToVerify) TestCancelJob() {
 	// change type from long to tinyint.
 	newCol.FieldType = *types.NewFieldType(mysql.TypeTiny)
 	// change from null to not null
-	newCol.FieldType.Flag |= mysql.NotNullFlag
-	newCol.FieldType.Flen = 2
+	newCol.FieldType.AddFlag(mysql.NotNullFlag)
+	newCol.FieldType.SetFlen(2)
 
 	originColName := baseTableInfo.Columns[0].Name
 	pos := &ast.ColumnPosition{Tp: ast.ColumnPositionNone}
@@ -1375,36 +1375,36 @@ func (s *testDDLSerialSuiteToVerify) TestCancelJob() {
 	doDDLJobErrWithSchemaState(ctx, d, s.T(), dbInfo.ID, baseTableInfo.ID, test.act, modifyColumnArgs, &cancelState)
 	require.NoError(s.T(), checkErr)
 	baseTable = testGetTable(s.T(), d, dbInfo.ID, baseTableInfo.ID)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Tp, mysql.TypeLong)
-	require.Equal(s.T(), mysql.HasNotNullFlag(baseTable.Meta().Columns[0].FieldType.Flag), false)
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetType(), mysql.TypeLong)
+	require.Equal(s.T(), mysql.HasNotNullFlag(baseTable.Meta().Columns[0].FieldType.GetFlag()), false)
 
 	updateTest(&tests[50])
 	doDDLJobErrWithSchemaState(ctx, d, s.T(), dbInfo.ID, baseTableInfo.ID, test.act, modifyColumnArgs, &cancelState)
 	require.NoError(s.T(), checkErr)
 	baseTable = testGetTable(s.T(), d, dbInfo.ID, baseTableInfo.ID)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Tp, mysql.TypeLong)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Flag&mysql.NotNullFlag, uint(0))
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetType(), mysql.TypeLong)
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetFlag()&mysql.NotNullFlag, uint(0))
 
 	updateTest(&tests[51])
 	doDDLJobErrWithSchemaState(ctx, d, s.T(), dbInfo.ID, baseTableInfo.ID, test.act, modifyColumnArgs, &cancelState)
 	require.NoError(s.T(), checkErr)
 	baseTable = testGetTable(s.T(), d, dbInfo.ID, baseTableInfo.ID)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Tp, mysql.TypeLong)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Flag&mysql.NotNullFlag, uint(0))
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetType(), mysql.TypeLong)
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetFlag()&mysql.NotNullFlag, uint(0))
 
 	updateTest(&tests[52])
 	doDDLJobErrWithSchemaState(ctx, d, s.T(), dbInfo.ID, baseTableInfo.ID, test.act, modifyColumnArgs, &cancelState)
 	require.NoError(s.T(), checkErr)
 	baseTable = testGetTable(s.T(), d, dbInfo.ID, baseTableInfo.ID)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Tp, mysql.TypeLong)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Flag&mysql.NotNullFlag, uint(0))
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetType(), mysql.TypeLong)
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetFlag()&mysql.NotNullFlag, uint(0))
 
 	updateTest(&tests[53])
 	doDDLJobSuccess(ctx, d, s.T(), dbInfo.ID, baseTableInfo.ID, test.act, modifyColumnArgs)
 	require.NoError(s.T(), checkErr)
 	baseTable = testGetTable(s.T(), d, dbInfo.ID, baseTableInfo.ID)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Tp, mysql.TypeTiny)
-	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.Flag&mysql.NotNullFlag, uint(1))
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetType(), mysql.TypeTiny)
+	require.Equal(s.T(), baseTable.Meta().Columns[0].FieldType.GetFlag()&mysql.NotNullFlag, uint(1))
 	require.Nil(s.T(), failpoint.Disable("github.com/pingcap/tidb/ddl/skipMockContextDoExec"))
 
 	// for drop indexes
@@ -1596,7 +1596,7 @@ func (s *testDDLSuiteToVerify) TestParallelDDL() {
 	// create table t2 (c1 int primary key, c2 int, c3 int);
 	tblInfo2, err := testTableInfo(d, "t2", 3)
 	require.NoError(s.T(), err)
-	tblInfo2.Columns[0].Flag = mysql.PriKeyFlag | mysql.NotNullFlag
+	tblInfo2.Columns[0].SetFlag(mysql.PriKeyFlag | mysql.NotNullFlag)
 	tblInfo2.PKIsHandle = true
 	testCreateTable(s.T(), ctx, d, dbInfo1, tblInfo2)
 	// insert t2 values (1, 1), (2, 2), (3, 3)

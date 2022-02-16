@@ -16,7 +16,6 @@ package expression
 
 import (
 	"fmt"
-
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/parser/terror"
 	"github.com/pingcap/tidb/sessionctx"
@@ -31,7 +30,7 @@ import (
 // NewOne stands for a number 1.
 func NewOne() *Constant {
 	retT := types.NewFieldType(mysql.TypeTiny)
-	retT.Flag |= mysql.UnsignedFlag // shrink range to avoid integral promotion
+	retT.SetFlag(retT.GetFlag() | mysql.UnsignedFlag) // shrink range to avoid integral promotion
 	return &Constant{
 		Value:   types.NewDatum(1),
 		RetType: retT,
@@ -41,7 +40,7 @@ func NewOne() *Constant {
 // NewZero stands for a number 0.
 func NewZero() *Constant {
 	retT := types.NewFieldType(mysql.TypeTiny)
-	retT.Flag |= mysql.UnsignedFlag // shrink range to avoid integral promotion
+	retT.SetFlag(retT.GetFlag() | mysql.UnsignedFlag) // shrink range to avoid integral promotion
 	return &Constant{
 		Value:   types.NewDatum(0),
 		RetType: retT,
@@ -219,7 +218,7 @@ func (c *Constant) EvalInt(ctx sessionctx.Context, row chunk.Row) (int64, bool, 
 	if !lazy {
 		dt = c.Value
 	}
-	if c.GetType().Tp == mysql.TypeNull || dt.IsNull() {
+	if c.GetType().GetType() == mysql.TypeNull || dt.IsNull() {
 		return 0, true, nil
 	} else if dt.Kind() == types.KindBinaryLiteral {
 		val, err := dt.GetBinaryLiteral().ToInt(ctx.GetSessionVars().StmtCtx)
@@ -240,7 +239,7 @@ func (c *Constant) EvalReal(ctx sessionctx.Context, row chunk.Row) (float64, boo
 	if !lazy {
 		dt = c.Value
 	}
-	if c.GetType().Tp == mysql.TypeNull || dt.IsNull() {
+	if c.GetType().GetType() == mysql.TypeNull || dt.IsNull() {
 		return 0, true, nil
 	}
 	if c.GetType().Hybrid() || dt.Kind() == types.KindBinaryLiteral || dt.Kind() == types.KindString {
@@ -259,7 +258,7 @@ func (c *Constant) EvalString(ctx sessionctx.Context, row chunk.Row) (string, bo
 	if !lazy {
 		dt = c.Value
 	}
-	if c.GetType().Tp == mysql.TypeNull || dt.IsNull() {
+	if c.GetType().GetType() == mysql.TypeNull || dt.IsNull() {
 		return "", true, nil
 	}
 	res, err := dt.ToString()
@@ -275,7 +274,7 @@ func (c *Constant) EvalDecimal(ctx sessionctx.Context, row chunk.Row) (*types.My
 	if !lazy {
 		dt = c.Value
 	}
-	if c.GetType().Tp == mysql.TypeNull || dt.IsNull() {
+	if c.GetType().GetType() == mysql.TypeNull || dt.IsNull() {
 		return nil, true, nil
 	}
 	res, err := dt.ToDecimal(ctx.GetSessionVars().StmtCtx)
@@ -284,8 +283,8 @@ func (c *Constant) EvalDecimal(ctx sessionctx.Context, row chunk.Row) (*types.My
 	}
 	// The decimal may be modified during plan building.
 	_, frac := res.PrecisionAndFrac()
-	if frac < c.GetType().Decimal {
-		err = res.Round(res, c.GetType().Decimal, types.ModeHalfEven)
+	if frac < c.GetType().GetDecimal() {
+		err = res.Round(res, c.GetType().GetDecimal(), types.ModeHalfEven)
 	}
 	return res, false, err
 }
@@ -299,7 +298,7 @@ func (c *Constant) EvalTime(ctx sessionctx.Context, row chunk.Row) (val types.Ti
 	if !lazy {
 		dt = c.Value
 	}
-	if c.GetType().Tp == mysql.TypeNull || dt.IsNull() {
+	if c.GetType().GetType() == mysql.TypeNull || dt.IsNull() {
 		return types.ZeroTime, true, nil
 	}
 	return dt.GetMysqlTime(), false, nil
@@ -314,7 +313,7 @@ func (c *Constant) EvalDuration(ctx sessionctx.Context, row chunk.Row) (val type
 	if !lazy {
 		dt = c.Value
 	}
-	if c.GetType().Tp == mysql.TypeNull || dt.IsNull() {
+	if c.GetType().GetType() == mysql.TypeNull || dt.IsNull() {
 		return types.Duration{}, true, nil
 	}
 	return dt.GetMysqlDuration(), false, nil
@@ -329,7 +328,7 @@ func (c *Constant) EvalJSON(ctx sessionctx.Context, row chunk.Row) (json.BinaryJ
 	if !lazy {
 		dt = c.Value
 	}
-	if c.GetType().Tp == mysql.TypeNull || dt.IsNull() {
+	if c.GetType().GetType() == mysql.TypeNull || dt.IsNull() {
 		return json.BinaryJSON{}, true, nil
 	}
 	return dt.GetMysqlJSON(), false, nil

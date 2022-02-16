@@ -140,8 +140,8 @@ func (p *LogicalJoin) checkJoinKeyCollation(leftKeys, rightKeys []*expression.Co
 		lt := leftKeys[i].RetType
 		rt := rightKeys[i].RetType
 		if (lt.EvalType() == types.ETString && rt.EvalType() == types.ETString) &&
-			(leftKeys[i].RetType.Charset != rightKeys[i].RetType.Charset ||
-				leftKeys[i].RetType.Collate != rightKeys[i].RetType.Collate) {
+			(leftKeys[i].RetType.GetCharset() != rightKeys[i].RetType.GetCharset() ||
+				leftKeys[i].RetType.GetCollate() != rightKeys[i].RetType.GetCollate()) {
 			return false
 		}
 	}
@@ -157,12 +157,12 @@ func (p *LogicalJoin) GetMergeJoin(prop *property.PhysicalProperty, schema *expr
 	// EnumType/SetType Unsupported: merge join conflicts with index order.
 	// ref: https://github.com/pingcap/tidb/issues/24473, https://github.com/pingcap/tidb/issues/25669
 	for _, leftKey := range leftJoinKeys {
-		if leftKey.RetType.Tp == mysql.TypeEnum || leftKey.RetType.Tp == mysql.TypeSet {
+		if leftKey.RetType.GetType() == mysql.TypeEnum || leftKey.RetType.GetType() == mysql.TypeSet {
 			return nil
 		}
 	}
 	for _, rightKey := range rightJoinKeys {
-		if rightKey.RetType.Tp == mysql.TypeEnum || rightKey.RetType.Tp == mysql.TypeSet {
+		if rightKey.RetType.GetType() == mysql.TypeEnum || rightKey.RetType.GetType() == mysql.TypeSet {
 			return nil
 		}
 	}
@@ -551,12 +551,12 @@ func (p *LogicalJoin) constructIndexMergeJoin(
 		// EnumType/SetType Unsupported: merge join conflicts with index order.
 		// ref: https://github.com/pingcap/tidb/issues/24473, https://github.com/pingcap/tidb/issues/25669
 		for _, innerKey := range join.InnerJoinKeys {
-			if innerKey.RetType.Tp == mysql.TypeEnum || innerKey.RetType.Tp == mysql.TypeSet {
+			if innerKey.RetType.GetType() == mysql.TypeEnum || innerKey.RetType.GetType() == mysql.TypeSet {
 				return nil
 			}
 		}
 		for _, outerKey := range join.OuterJoinKeys {
-			if outerKey.RetType.Tp == mysql.TypeEnum || outerKey.RetType.Tp == mysql.TypeSet {
+			if outerKey.RetType.GetType() == mysql.TypeEnum || outerKey.RetType.GetType() == mysql.TypeSet {
 				return nil
 			}
 		}
@@ -935,7 +935,7 @@ func (p *LogicalJoin) constructInnerTableScanTask(
 	if pk == nil {
 		ranges = ranger.FullRange()
 	} else {
-		ranges = ranger.FullIntRange(mysql.HasUnsignedFlag(pk.RetType.Flag))
+		ranges = ranger.FullIntRange(mysql.HasUnsignedFlag(pk.RetType.GetFlag()))
 	}
 	ts := PhysicalTableScan{
 		Table:           ds.tableInfo,
@@ -1245,9 +1245,9 @@ func (ijHelper *indexJoinBuildHelper) resetContextForIndex(innerKeys []*expressi
 		ijHelper.curIdxOff2KeyOff[i] = tmpSchema.ColumnIndex(idxCol)
 		if ijHelper.curIdxOff2KeyOff[i] >= 0 {
 			// Don't use the join columns if their collations are unmatched and the new collation is enabled.
-			if collate.NewCollationEnabled() && types.IsString(idxCol.RetType.Tp) && types.IsString(outerKeys[ijHelper.curIdxOff2KeyOff[i]].RetType.Tp) {
+			if collate.NewCollationEnabled() && types.IsString(idxCol.RetType.GetType()) && types.IsString(outerKeys[ijHelper.curIdxOff2KeyOff[i]].RetType.GetType()) {
 				_, coll := expression.DeriveCollationFromExprs(nil, idxCol, outerKeys[ijHelper.curIdxOff2KeyOff[i]])
-				if !collate.CompatibleCollate(idxCol.GetType().Collate, coll) {
+				if !collate.CompatibleCollate(idxCol.GetType().GetCollate(), coll) {
 					ijHelper.curIdxOff2KeyOff[i] = -1
 				}
 			}

@@ -44,7 +44,8 @@ func testTableInfoWith2IndexOnFirstColumn(t *testing.T, d *ddl, name string, num
 		idxs = append(idxs, idx)
 	}
 	normalInfo.Indices = idxs
-	normalInfo.Columns[0].FieldType.Flen = 11
+	normalInfo.Columns[0].FieldType.SetFlen(11)
+
 	return normalInfo
 }
 

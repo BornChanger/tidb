@@ -566,7 +566,7 @@ func (s *testDBSuite8) TestCancelAddPrimaryKey(c *C) {
 	ctx := tk.Se.(sessionctx.Context)
 	c.Assert(ctx.NewTxn(context.Background()), IsNil)
 	t := testGetTableByName(c, ctx, "test_db", "t1")
-	col1Flag := t.Cols()[1].Flag
+	col1Flag := t.Cols()[1].GetFlag()
 	c.Assert(!mysql.HasNotNullFlag(col1Flag) && !mysql.HasPreventNullInsertFlag(col1Flag) && mysql.HasUnsignedFlag(col1Flag), IsTrue)
 	tk.MustExec("drop table t1")
 }
@@ -2083,9 +2083,9 @@ func (s *testDBSuite5) TestAlterPrimaryKey(c *C) {
 	ctx := tk.Se.(sessionctx.Context)
 	c.Assert(ctx.NewTxn(context.Background()), IsNil)
 	t := testGetTableByName(c, ctx, "test", "test_add_pk")
-	col1Flag := t.Cols()[0].Flag
-	col2Flag := t.Cols()[1].Flag
-	col3Flag := t.Cols()[2].Flag
+	col1Flag := t.Cols()[0].GetFlag()
+	col2Flag := t.Cols()[1].GetFlag()
+	col3Flag := t.Cols()[2].GetFlag()
 	c.Assert(mysql.HasNotNullFlag(col1Flag) && !mysql.HasPreventNullInsertFlag(col1Flag), IsTrue)
 	c.Assert(mysql.HasNotNullFlag(col2Flag) && !mysql.HasPreventNullInsertFlag(col2Flag) && mysql.HasUnsignedFlag(col2Flag), IsTrue)
 	c.Assert(mysql.HasNotNullFlag(col3Flag) && !mysql.HasPreventNullInsertFlag(col3Flag) && !mysql.HasNoDefaultValueFlag(col3Flag), IsTrue)
@@ -2403,8 +2403,8 @@ LOOP:
 	c.Assert(err, IsNil)
 	tblInfo := tbl.Meta()
 	colC := tblInfo.Columns[2]
-	c.Assert(colC.Tp, Equals, mysql.TypeTimestamp)
-	hasNotNull := mysql.HasNotNullFlag(colC.Flag)
+	c.Assert(colC.GetType(), Equals, mysql.TypeTimestamp)
+	hasNotNull := mysql.HasNotNullFlag(colC.GetFlag())
 	c.Assert(hasNotNull, IsFalse)
 	// add datetime type column
 	s.mustExec(tk, c, "create table test_on_update_d (c1 int, c2 datetime);")
@@ -2415,8 +2415,8 @@ LOOP:
 	c.Assert(err, IsNil)
 	tblInfo = tbl.Meta()
 	colC = tblInfo.Columns[2]
-	c.Assert(colC.Tp, Equals, mysql.TypeDatetime)
-	hasNotNull = mysql.HasNotNullFlag(colC.Flag)
+	c.Assert(colC.GetType(), Equals, mysql.TypeDatetime)
+	hasNotNull = mysql.HasNotNullFlag(colC.GetFlag())
 	c.Assert(hasNotNull, IsFalse)
 
 	// add year type column
@@ -2551,7 +2551,7 @@ func (s *testDBSuite4) TestChangeColumn(c *C) {
 	c.Assert(err, IsNil)
 	tblInfo := tbl.Meta()
 	colD := tblInfo.Columns[2]
-	hasNoDefault := mysql.HasNoDefaultValueFlag(colD.Flag)
+	hasNoDefault := mysql.HasNoDefaultValueFlag(colD.GetFlag())
 	c.Assert(hasNoDefault, IsTrue)
 	// for the following definitions: 'not null', 'null', 'default value' and 'comment'
 	s.mustExec(tk, c, "alter table t3 change b b varchar(20) null default 'c' comment 'my comment'")
@@ -2561,7 +2561,7 @@ func (s *testDBSuite4) TestChangeColumn(c *C) {
 	tblInfo = tbl.Meta()
 	colB := tblInfo.Columns[1]
 	c.Assert(colB.Comment, Equals, "my comment")
-	hasNotNull := mysql.HasNotNullFlag(colB.Flag)
+	hasNotNull := mysql.HasNotNullFlag(colB.GetFlag())
 	c.Assert(hasNotNull, IsFalse)
 	s.mustExec(tk, c, "insert into t3 set aa = 3, dd = 5")
 	tk.MustQuery("select b from t3").Check(testkit.Rows("a", "b", "c"))
@@ -2574,7 +2574,7 @@ func (s *testDBSuite4) TestChangeColumn(c *C) {
 	tblInfo = tbl.Meta()
 	colC := tblInfo.Columns[3]
 	c.Assert(colC.Comment, Equals, "col c comment")
-	hasNotNull = mysql.HasNotNullFlag(colC.Flag)
+	hasNotNull = mysql.HasNotNullFlag(colC.GetFlag())
 	c.Assert(hasNotNull, IsFalse)
 	// for enum
 	s.mustExec(tk, c, "alter table t3 add column en enum('a', 'b', 'c') not null default 'a'")
@@ -3047,10 +3047,10 @@ func (s *testSerialDBSuite) TestRepairTable(c *C) {
 	c.Assert(repairTable.Meta().Indices[0].ID, Equals, originTableInfo.Columns[0].ID)
 	c.Assert(repairTable.Meta().AutoIncID, Equals, originTableInfo.AutoIncID)
 
-	c.Assert(repairTable.Meta().Columns[0].Tp, Equals, mysql.TypeLong)
-	c.Assert(repairTable.Meta().Columns[1].Tp, Equals, mysql.TypeVarchar)
-	c.Assert(repairTable.Meta().Columns[1].Flen, Equals, 5)
-	c.Assert(repairTable.Meta().Columns[2].Tp, Equals, mysql.TypeLong)
+	c.Assert(repairTable.Meta().Columns[0].GetType(), Equals, mysql.TypeLong)
+	c.Assert(repairTable.Meta().Columns[1].GetType(), Equals, mysql.TypeVarchar)
+	c.Assert(repairTable.Meta().Columns[1].GetFlen(), Equals, 5)
+	c.Assert(repairTable.Meta().Columns[2].GetType(), Equals, mysql.TypeLong)
 
 	// Exec the show create table statement to make sure new tableInfo has been set.
 	result := tk.MustQuery("show create table origin")
@@ -4128,7 +4128,7 @@ func (s *testDBSuite3) TestColumnModifyingDefinition(c *C) {
 			c2 = col
 		}
 	}
-	c.Assert(mysql.HasNotNullFlag(c2.Flag), IsTrue)
+	c.Assert(mysql.HasNotNullFlag(c2.GetFlag()), IsTrue)
 
 	tk.MustExec("drop table if exists test2;")
 	tk.MustExec("create table test2 (c1 int, c2 int, c3 int default 1, index (c1));")
@@ -4177,7 +4177,7 @@ func (s *testDBSuite5) TestCheckConvertToCharacter(c *C) {
 	tk.MustGetErrCode("alter table t modify column a varchar(10) charset utf8 collate utf8_bin", errno.ErrUnsupportedDDLOperation)
 	tk.MustGetErrCode("alter table t modify column a varchar(10) charset utf8mb4 collate utf8mb4_bin", errno.ErrUnsupportedDDLOperation)
 	tk.MustGetErrCode("alter table t modify column a varchar(10) charset latin1 collate latin1_bin", errno.ErrUnsupportedDDLOperation)
-	c.Assert(t.Cols()[0].Charset, Equals, "binary")
+	c.Assert(t.Cols()[0].GetCharset(), Equals, "binary")
 }
 
 func (s *testDBSuite5) TestModifyColumnRollBack(c *C) {
@@ -4200,7 +4200,7 @@ func (s *testDBSuite5) TestModifyColumnRollBack(c *C) {
 				c2 = col
 			}
 		}
-		if mysql.HasPreventNullInsertFlag(c2.Flag) {
+		if mysql.HasPreventNullInsertFlag(c2.GetFlag()) {
 			tk.MustGetErrCode("insert into t1(c2) values (null);", errno.ErrBadNull)
 		}
 
@@ -4256,7 +4256,7 @@ func (s *testDBSuite5) TestModifyColumnRollBack(c *C) {
 			c2 = col
 		}
 	}
-	c.Assert(mysql.HasNotNullFlag(c2.Flag), IsFalse)
+	c.Assert(mysql.HasNotNullFlag(c2.GetFlag()), IsFalse)
 	s.dom.DDL().(ddl.DDLForTest).SetHook(originalHook)
 	s.mustExec(tk, c, "drop table t1")
 }
@@ -4400,7 +4400,7 @@ func (s *testSerialDBSuite) TestModifyColumnNullToNotNullWithChangingVal(c *C) {
 	sql2 := "alter table t1 change c2 c2 tinyint not null;"
 	testModifyColumnNullToNotNull(c, s.testDBSuite, true, sql1, sql2)
 	c2 := getModifyColumn(c, s.s.(sessionctx.Context), s.schemaName, "t1", "c2", false)
-	c.Assert(c2.FieldType.Tp, Equals, mysql.TypeTiny)
+	c.Assert(c2.FieldType.GetType(), Equals, mysql.TypeTiny)
 }
 
 func (s *testSerialDBSuite) TestModifyColumnBetweenStringTypes(c *C) {
@@ -4412,7 +4412,7 @@ func (s *testSerialDBSuite) TestModifyColumnBetweenStringTypes(c *C) {
 	tk.MustExec("insert into tt values ('111'),('10000');")
 	tk.MustExec("alter table tt change a a varchar(5);")
 	mvc := getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(mvc.FieldType.Flen, Equals, 5)
+	c.Assert(mvc.FieldType.GetFlen(), Equals, 5)
 	tk.MustQuery("select * from tt").Check(testkit.Rows("111", "10000"))
 	tk.MustGetErrMsg("alter table tt change a a varchar(4);", "[types:1265]Data truncated for column 'a', value is '10000'")
 	tk.MustExec("alter table tt change a a varchar(100);")
@@ -4424,7 +4424,7 @@ func (s *testSerialDBSuite) TestModifyColumnBetweenStringTypes(c *C) {
 	tk.MustExec("insert into tt values ('111'),('10000');")
 	tk.MustExec("alter table tt change a a char(5);")
 	mc := getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(mc.FieldType.Flen, Equals, 5)
+	c.Assert(mc.FieldType.GetFlen(), Equals, 5)
 	tk.MustQuery("select * from tt").Check(testkit.Rows("111", "10000"))
 	tk.MustGetErrMsg("alter table tt change a a char(4);", "[types:1265]Data truncated for column 'a', value is '10000'")
 	tk.MustExec("alter table tt change a a char(100);")
@@ -4436,7 +4436,7 @@ func (s *testSerialDBSuite) TestModifyColumnBetweenStringTypes(c *C) {
 	tk.MustExec("insert into tt values ('111'),('10000');")
 	tk.MustGetErrMsg("alter table tt change a a binary(5);", "[types:1265]Data truncated for column 'a', value is '111\x00\x00\x00\x00\x00\x00\x00'")
 	mb := getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(mb.FieldType.Flen, Equals, 10)
+	c.Assert(mb.FieldType.GetFlen(), Equals, 10)
 	tk.MustQuery("select * from tt").Check(testkit.Rows("111\x00\x00\x00\x00\x00\x00\x00", "10000\x00\x00\x00\x00\x00"))
 	tk.MustGetErrMsg("alter table tt change a a binary(4);", "[types:1265]Data truncated for column 'a', value is '111\x00\x00\x00\x00\x00\x00\x00'")
 	tk.MustExec("alter table tt change a a binary(12);")
@@ -4449,7 +4449,7 @@ func (s *testSerialDBSuite) TestModifyColumnBetweenStringTypes(c *C) {
 	tk.MustExec("insert into tt values ('111'),('10000');")
 	tk.MustExec("alter table tt change a a varbinary(5);")
 	mvb := getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(mvb.FieldType.Flen, Equals, 5)
+	c.Assert(mvb.FieldType.GetFlen(), Equals, 5)
 	tk.MustQuery("select * from tt").Check(testkit.Rows("111", "10000"))
 	tk.MustGetErrMsg("alter table tt change a a varbinary(4);", "[types:1265]Data truncated for column 'a', value is '10000'")
 	tk.MustExec("alter table tt change a a varbinary(12);")
@@ -4463,34 +4463,34 @@ func (s *testSerialDBSuite) TestModifyColumnBetweenStringTypes(c *C) {
 
 	tk.MustExec("alter table tt change a a char(10);")
 	c2 := getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(c2.FieldType.Tp, Equals, mysql.TypeString)
-	c.Assert(c2.FieldType.Flen, Equals, 10)
+	c.Assert(c2.FieldType.GetType(), Equals, mysql.TypeString)
+	c.Assert(c2.FieldType.GetFlen(), Equals, 10)
 	tk.MustQuery("select * from tt").Check(testkit.Rows("111", "10000"))
 	tk.MustGetErrMsg("alter table tt change a a char(4);", "[types:1265]Data truncated for column 'a', value is '10000'")
 
 	// char to text
 	tk.MustExec("alter table tt change a a text;")
 	c2 = getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(c2.FieldType.Tp, Equals, mysql.TypeBlob)
+	c.Assert(c2.FieldType.GetType(), Equals, mysql.TypeBlob)
 
 	// text to set
 	tk.MustGetErrMsg("alter table tt change a a set('111', '2222');", "[types:1265]Data truncated for column 'a', value is '10000'")
 	tk.MustExec("alter table tt change a a set('111', '10000');")
 	c2 = getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(c2.FieldType.Tp, Equals, mysql.TypeSet)
+	c.Assert(c2.FieldType.GetType(), Equals, mysql.TypeSet)
 	tk.MustQuery("select * from tt").Check(testkit.Rows("111", "10000"))
 
 	// set to set
 	tk.MustExec("alter table tt change a a set('10000', '111');")
 	c2 = getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(c2.FieldType.Tp, Equals, mysql.TypeSet)
+	c.Assert(c2.FieldType.GetType(), Equals, mysql.TypeSet)
 	tk.MustQuery("select * from tt").Check(testkit.Rows("111", "10000"))
 
 	// set to enum
 	tk.MustGetErrMsg("alter table tt change a a enum('111', '2222');", "[types:1265]Data truncated for column 'a', value is '10000'")
 	tk.MustExec("alter table tt change a a enum('111', '10000');")
 	c2 = getModifyColumn(c, s.s.(sessionctx.Context), "test", "tt", "a", false)
-	c.Assert(c2.FieldType.Tp, Equals, mysql.TypeEnum)
+	c.Assert(c2.FieldType.GetType(), Equals, mysql.TypeEnum)
 	tk.MustQuery("select * from tt").Check(testkit.Rows("111", "10000"))
 	tk.MustExec("alter table tt change a a enum('10000', '111');")
 	tk.MustQuery("select * from tt where a = 1").Check(testkit.Rows("10000"))
@@ -4578,8 +4578,8 @@ func testModifyColumnNullToNotNull(c *C, s *testDBSuite, enableChangeColumnType 
 	c.Assert(checkErr.Error(), Equals, "[table:1048]Column 'c2' cannot be null")
 
 	c2 := getModifyColumn(c, s.s.(sessionctx.Context), s.schemaName, "t1", "c2", false)
-	c.Assert(mysql.HasNotNullFlag(c2.Flag), IsTrue)
-	c.Assert(mysql.HasPreventNullInsertFlag(c2.Flag), IsFalse)
+	c.Assert(mysql.HasNotNullFlag(c2.GetFlag()), IsTrue)
+	c.Assert(mysql.HasPreventNullInsertFlag(c2.GetFlag()), IsFalse)
 	_, err = tk.Exec("insert into t1 values ();")
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "[table:1364]Field 'c2' doesn't have a default value")
@@ -5136,7 +5136,7 @@ func (s *testSerialDBSuite) TestProcessColumnFlags(c *C) {
 		t := testGetTableByName(c, tk.Se, "test_db", "t")
 		for _, col := range t.Cols() {
 			if strings.EqualFold(col.Name.L, n) {
-				c.Assert(f(col.Flag), IsTrue)
+				c.Assert(f(col.GetFlag()), IsTrue)
 				break
 			}
 		}
@@ -7016,16 +7016,16 @@ func (s *testSerialDBSuite) TestColumnTypeChangeGenUniqueChangingName(c *C) {
 	t = testGetTableByName(c, tk.Se, "test", "t")
 	c.Assert(len(t.Meta().Columns), Equals, 4)
 	c.Assert(t.Meta().Columns[0].Name.O, Equals, "c1")
-	c.Assert(t.Meta().Columns[0].Tp, Equals, mysql.TypeTiny)
+	c.Assert(t.Meta().Columns[0].GetType(), Equals, mysql.TypeTiny)
 	c.Assert(t.Meta().Columns[0].Offset, Equals, 0)
 	c.Assert(t.Meta().Columns[1].Name.O, Equals, "_col$_c1")
-	c.Assert(t.Meta().Columns[1].Tp, Equals, mysql.TypeTiny)
+	c.Assert(t.Meta().Columns[1].GetType(), Equals, mysql.TypeTiny)
 	c.Assert(t.Meta().Columns[1].Offset, Equals, 1)
 	c.Assert(t.Meta().Columns[2].Name.O, Equals, "_col$__col$_c1_0")
-	c.Assert(t.Meta().Columns[2].Tp, Equals, mysql.TypeTiny)
+	c.Assert(t.Meta().Columns[2].GetType(), Equals, mysql.TypeTiny)
 	c.Assert(t.Meta().Columns[2].Offset, Equals, 2)
 	c.Assert(t.Meta().Columns[3].Name.O, Equals, "_col$__col$__col$_c1_0_0")
-	c.Assert(t.Meta().Columns[3].Tp, Equals, mysql.TypeTiny)
+	c.Assert(t.Meta().Columns[3].GetType(), Equals, mysql.TypeTiny)
 	c.Assert(t.Meta().Columns[3].Offset, Equals, 3)
 
 	tk.MustExec("drop table if exists t")
@@ -7167,7 +7167,7 @@ func (s *testDBSuite4) TestCreateTableWithDecimalWithDoubleZero(c *C) {
 		tblInfo := tableInfo.Meta()
 		for _, col := range tblInfo.Columns {
 			if col.Name.L == field {
-				c.Assert(col.Flen, Equals, 10)
+				c.Assert(col.GetFlen(), Equals, 10)
 			}
 		}
 	}
@@ -7225,7 +7225,7 @@ func (s *testDBSuite5) TestIssue23473(c *C) {
 	tk.MustExec("create table t_23473 (k int primary key, v int)")
 	tk.MustExec("alter table t_23473 change column k k bigint")
 	t := testGetTableByName(c, tk.Se.(sessionctx.Context), "test", "t_23473")
-	col1Flag := t.Cols()[0].Flag
+	col1Flag := t.Cols()[0].GetFlag()
 	c.Assert(mysql.HasNoDefaultValueFlag(col1Flag), IsTrue)
 }
 
@@ -7276,7 +7276,7 @@ func (s *testSerialSuite) TestIssue23872(c *C) {
 	err = rs.Close()
 	c.Assert(err, IsNil)
 	expectFlag := uint16(mysql.NotNullFlag | mysql.PriKeyFlag | mysql.NoDefaultValueFlag)
-	c.Assert(cols[0].Column.Flag, Equals, uint(expectFlag))
+	c.Assert(cols[0].Column.GetFlag(), Equals, uint(expectFlag))
 	tk.MustExec("create table t(a int default 1, primary key(a));")
 	defer tk.MustExec("drop table if exists t;")
 	rs1, err := tk.Exec("select * from t;")
@@ -7285,7 +7285,7 @@ func (s *testSerialSuite) TestIssue23872(c *C) {
 	err = rs1.Close()
 	c.Assert(err, IsNil)
 	expectFlag1 := uint16(mysql.NotNullFlag | mysql.PriKeyFlag)
-	c.Assert(cols1[0].Column.Flag, Equals, uint(expectFlag1))
+	c.Assert(cols1[0].Column.GetFlag(), Equals, uint(expectFlag1))
 }
 
 // Close issue #23321.

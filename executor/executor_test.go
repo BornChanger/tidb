@@ -7822,7 +7822,7 @@ func (s *testSerialSuite) TestIssue19148(c *C) {
 	is := domain.GetDomain(ctx).InfoSchema()
 	tblInfo, err := is.TableByName(model.NewCIStr("test"), model.NewCIStr("t"))
 	c.Assert(err, IsNil)
-	c.Assert(int(tblInfo.Meta().Columns[0].Flag), Equals, 0)
+	c.Assert(int(tblInfo.Meta().Columns[0].GetFlag()), Equals, 0)
 }
 
 func (s *testSuite) TestIssue19667(c *C) {
@@ -8494,7 +8494,7 @@ func (s *testSuite) TestIssue23993(c *C) {
 	tk.MustExec("insert into t_issue_23993 values(-790822912)")
 	tk.MustQuery("select cast(a as time) from t_issue_23993").Check(testkit.Rows("<nil>"))
 	tk.MustQuery("select a from t_issue_23993 where cast(a as time)").Check(testkit.Rows())
-	// Decimal cast to time should return NULL
+	// decimal cast to time should return NULL
 	tk.MustExec("drop table if exists t_issue_23993")
 	tk.MustExec("create table t_issue_23993(a decimal)")
 	tk.MustExec("insert into t_issue_23993 values(-790822912)")

@@ -245,7 +245,7 @@ func (s *testSuite1) TestDumpReal(c *C) {
 	}
 	for _, testCase := range cases {
 		tp := types.NewFieldType(mysql.TypeDouble)
-		tp.Decimal = testCase.dec
+		tp.SetDecimal(testCase.dec)
 		_, buf := executor.DumpRealOutfile(nil, nil, testCase.val, tp)
 		c.Assert(string(buf), Equals, testCase.result)
 	}

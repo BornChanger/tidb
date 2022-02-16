@@ -80,7 +80,7 @@ func (s *testIndexChangeSuiteToVerify) TestIndexChange() {
 	// create table t (c1 int primary key, c2 int);
 	tblInfo, err := testTableInfo(d, "t", 2)
 	require.NoError(s.T(), err)
-	tblInfo.Columns[0].Flag = mysql.PriKeyFlag | mysql.NotNullFlag
+	tblInfo.Columns[0].SetFlag(mysql.PriKeyFlag | mysql.NotNullFlag)
 	tblInfo.PKIsHandle = true
 	ctx := testNewContext(d)
 	err = ctx.NewTxn(context.Background())

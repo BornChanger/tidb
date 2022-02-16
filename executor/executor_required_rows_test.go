@@ -115,7 +115,7 @@ func (r *requiredRowsDataSource) genOneRow() chunk.Row {
 }
 
 func defaultGenerator(valType *types.FieldType) interface{} {
-	switch valType.Tp {
+	switch valType.GetType() {
 	case mysql.TypeLong, mysql.TypeLonglong:
 		return int64(rand.Int())
 	case mysql.TypeDouble:
@@ -408,7 +408,7 @@ func (s *testExecSuite) TestSelectionRequiredRows(c *C) {
 	gen01 := func() func(valType *types.FieldType) interface{} {
 		closureCount := 0
 		return func(valType *types.FieldType) interface{} {
-			switch valType.Tp {
+			switch valType.GetType() {
 			case mysql.TypeLong, mysql.TypeLonglong:
 				ret := int64(closureCount % 2)
 				closureCount++
@@ -615,7 +615,7 @@ func divGenerator(factor int) func(valType *types.FieldType) interface{} {
 	closureCountInt := 0
 	closureCountDouble := 0
 	return func(valType *types.FieldType) interface{} {
-		switch valType.Tp {
+		switch valType.GetType() {
 		case mysql.TypeLong, mysql.TypeLonglong:
 			ret := int64(closureCountInt / factor)
 			closureCountInt++
@@ -691,7 +691,7 @@ func (s *testExecSuite) TestStreamAggRequiredRows(c *C) {
 
 func (s *testExecSuite) TestMergeJoinRequiredRows(c *C) {
 	justReturn1 := func(valType *types.FieldType) interface{} {
-		switch valType.Tp {
+		switch valType.GetType() {
 		case mysql.TypeLong, mysql.TypeLonglong:
 			return int64(1)
 		case mysql.TypeDouble:
@@ -765,7 +765,7 @@ func genTestChunk4VecGroupChecker(chkRows []int, sameNum int) (expr []expression
 
 	expr = make([]expression.Expression, 1)
 	expr[0] = &expression.Column{
-		RetType: &types.FieldType{Tp: mysql.TypeLonglong, Flen: mysql.MaxIntWidth},
+		RetType: types.NewFieldTypeBuilderP().SetType(mysql.TypeLonglong).SetFlen(mysql.MaxIntWidth).BuildP(),
 		Index:   0,
 	}
 	return
@@ -878,7 +878,7 @@ func (s *testExecSuite) TestVecGroupCheckerDATARACE(c *C) {
 	for _, mType := range mTypes {
 		exprs := make([]expression.Expression, 1)
 		exprs[0] = &expression.Column{
-			RetType: &types.FieldType{Tp: mType},
+			RetType: types.NewFieldTypeBuilderP().SetType(mType).BuildP(),
 			Index:   0,
 		}
 		vgc := newVecGroupChecker(ctx, exprs)

@@ -524,14 +524,14 @@ func (s *testSerialSuite) TestCreateTableWithLike(c *C) {
 	c.Assert(tbl1Info.ForeignKeys, IsNil)
 	c.Assert(tbl1Info.PKIsHandle, Equals, true)
 	col := tbl1Info.Columns[0]
-	hasNotNull := mysql.HasNotNullFlag(col.Flag)
+	hasNotNull := mysql.HasNotNullFlag(col.GetFlag())
 	c.Assert(hasNotNull, IsTrue)
 	tbl2, err := is.TableByName(model.NewCIStr("ctwl_db"), model.NewCIStr("t2"))
 	c.Assert(err, IsNil)
 	tbl2Info := tbl2.Meta()
 	c.Assert(tbl2Info.ForeignKeys, IsNil)
 	c.Assert(tbl2Info.PKIsHandle, Equals, true)
-	c.Assert(mysql.HasNotNullFlag(tbl2Info.Columns[0].Flag), IsTrue)
+	c.Assert(mysql.HasNotNullFlag(tbl2Info.Columns[0].GetFlag()), IsTrue)
 
 	// for different databases
 	tk.MustExec("create database ctwl_db1")

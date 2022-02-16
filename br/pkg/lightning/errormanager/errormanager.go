@@ -505,7 +505,7 @@ func (em *ErrorManager) Output() string {
 	if errCnt := em.charsetError(); errCnt > 0 {
 		count++
 		// do not support record charset error now.
-		t.AppendRow(table.Row{count, "Charset Error", errCnt, ""})
+		t.AppendRow(table.Row{count, "charset Error", errCnt, ""})
 	}
 	if errCnt := em.conflictError(); errCnt > 0 {
 		count++

@@ -100,7 +100,7 @@ func TestToBool(t *testing.T) {
 	testDatumToBool(t, td, 1)
 
 	ft := NewFieldType(mysql.TypeNewDecimal)
-	ft.Decimal = 5
+	ft.SetDecimal(5)
 	v, err := Convert(0.1415926, ft)
 	require.NoError(t, err)
 	testDatumToBool(t, v, 1)
@@ -143,7 +143,7 @@ func TestToInt64(t *testing.T) {
 	testDatumToInt64(t, td, int64(111112))
 
 	ft := NewFieldType(mysql.TypeNewDecimal)
-	ft.Decimal = 5
+	ft.SetDecimal(5)
 	v, err := Convert(3.1415926, ft)
 	require.NoError(t, err)
 	testDatumToInt64(t, v, int64(3))
@@ -155,7 +155,7 @@ func testDatumToUInt32(t *testing.T, val interface{}, expect uint32, hasError bo
 	sc.IgnoreTruncate = true
 
 	ft := NewFieldType(mysql.TypeLong)
-	ft.Flag |= mysql.UnsignedFlag
+	ft.AddFlag(mysql.UnsignedFlag)
 	converted, err := d.ConvertTo(sc, ft)
 
 	if hasError {
@@ -370,7 +370,7 @@ func TestCloneDatum(t *testing.T) {
 
 func newTypeWithFlag(tp byte, flag uint) *FieldType {
 	t := NewFieldType(tp)
-	t.Flag |= flag
+	t.AddFlag(flag)
 	return t
 }
 
@@ -382,11 +382,11 @@ func newMyDecimal(val string, t *testing.T) *MyDecimal {
 }
 
 func newRetTypeWithFlenDecimal(tp byte, flen int, decimal int) *FieldType {
-	return &FieldType{
-		Tp:      tp,
-		Flen:    flen,
-		Decimal: decimal,
-	}
+	ft := &FieldType{}
+	ft.SetType(tp)
+	ft.SetFlen(flen)
+	ft.SetDecimal(decimal)
+	return ft
 }
 
 func TestEstimatedMemUsage(t *testing.T) {
@@ -469,7 +469,7 @@ func TestChangeReverseResultByUpperLowerBound(t *testing.T) {
 			newRetTypeWithFlenDecimal(mysql.TypeDouble, mysql.MaxRealWidth, UnspecifiedLength),
 			Floor,
 		},
-		// int64 reserve to Decimal
+		// int64 reserve to decimal
 		{
 			NewIntDatum(1),
 			NewDecimalDatum(newMyDecimal("2", t)),
@@ -537,7 +537,7 @@ func TestStringToMysqlBit(t *testing.T) {
 	sc := new(stmtctx.StatementContext)
 	sc.IgnoreTruncate = true
 	tp := NewFieldType(mysql.TypeBit)
-	tp.Flen = 1
+	tp.SetFlen(1)
 	for _, tt := range tests {
 		bin, err := tt.a.convertToMysqlBit(nil, tp)
 		require.NoError(t, err)

@@ -78,7 +78,7 @@ func (s *testPlanBuilderSuite) TestShow(c *C) {
 		node.Tp = tp
 		schema, _ := buildShowSchema(node, false, false)
 		for _, col := range schema.Columns {
-			c.Assert(col.RetType.Flen, Greater, 0)
+			c.Assert(col.RetType.GetFlen(), Greater, 0)
 		}
 	}
 }

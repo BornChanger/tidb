@@ -794,7 +794,7 @@ func tryWhereIn2BatchPointGet(ctx sessionctx.Context, selStmt *ast.SelectStmt) *
 		// Try use handle
 		if tbl.PKIsHandle {
 			for _, col := range tbl.Columns {
-				if mysql.HasPriKeyFlag(col.Flag) && col.Name.L == colName.Name.Name.L {
+				if mysql.HasPriKeyFlag(col.GetFlag()) && col.Name.L == colName.Name.Name.L {
 					handleCol = col
 					whereColNames = append(whereColNames, col.Name.L)
 					break
@@ -915,7 +915,7 @@ func tryPointGetPlan(ctx sessionctx.Context, selStmt *ast.SelectStmt, check bool
 
 		p := newPointGetPlan(ctx, dbName, schema, tbl, names)
 		p.Handle = kv.IntHandle(handlePair.value.GetInt64())
-		p.UnsignedHandle = mysql.HasUnsignedFlag(fieldType.Flag)
+		p.UnsignedHandle = mysql.HasUnsignedFlag(fieldType.GetFlag())
 		p.HandleParam = handlePair.param
 		p.PartitionInfo = partitionInfo
 		return p
@@ -1205,7 +1205,7 @@ func getNameValuePairs(stmtCtx *stmtctx.StatementContext, tbl *model.TableInfo, 
 		}
 		col := model.FindColumnInfo(tbl.Cols(), colName.Name.Name.L)
 		if col == nil || // Handling the case when the column is _tidb_rowid.
-			(col.Tp == mysql.TypeString && col.Collate == charset.CollationBin) { // This type we needn't to pad `\0` in here.
+			(col.GetType() == mysql.TypeString && col.GetCollate() == charset.CollationBin) { // This type we needn't to pad `\0` in here.
 			return append(nvPairs, nameValuePair{colName: colName.Name.Name.L, value: d, param: param}), false
 		}
 		if !checkCanConvertInPointGet(col, d) {
@@ -1222,7 +1222,7 @@ func getNameValuePairs(stmtCtx *stmtctx.StatementContext, tbl *model.TableInfo, 
 			}
 		}
 		// The converted result must be same as original datum.
-		cmp, err := dVal.Compare(stmtCtx, &d, collate.GetCollator(col.Collate))
+		cmp, err := dVal.Compare(stmtCtx, &d, collate.GetCollator(col.GetCollate()))
 		if err != nil || cmp != 0 {
 			return nil, false
 		}
@@ -1240,7 +1240,7 @@ func getPointGetValue(stmtCtx *stmtctx.StatementContext, col *model.ColumnInfo, 
 		return nil
 	}
 	// The converted result must be same as original datum.
-	cmp, err := dVal.Compare(stmtCtx, d, collate.GetCollator(col.Collate))
+	cmp, err := dVal.Compare(stmtCtx, d, collate.GetCollator(col.GetCollate()))
 	if err != nil || cmp != 0 {
 		return nil
 	}
@@ -1258,7 +1258,7 @@ func checkCanConvertInPointGet(col *model.ColumnInfo, d types.Datum) bool {
 			return false
 		}
 	}
-	switch col.FieldType.Tp {
+	switch col.FieldType.GetType() {
 	case mysql.TypeBit:
 		switch kind {
 		case types.KindString:
@@ -1278,7 +1278,7 @@ func findPKHandle(tblInfo *model.TableInfo, pairs []nameValuePair) (handlePair n
 		return handlePair, nil
 	}
 	for _, col := range tblInfo.Columns {
-		if mysql.HasPriKeyFlag(col.Flag) {
+		if mysql.HasPriKeyFlag(col.GetFlag()) {
 			i := findInPairs(col.Name.L, pairs)
 			if i == -1 {
 				return handlePair, nil
@@ -1519,7 +1519,7 @@ func buildHandleCols(ctx sessionctx.Context, tbl *model.TableInfo, schema *expre
 	// fields len is 0 for update and delete.
 	if tbl.PKIsHandle {
 		for i, col := range tbl.Columns {
-			if mysql.HasPriKeyFlag(col.Flag) {
+			if mysql.HasPriKeyFlag(col.GetFlag()) {
 				return &IntHandleCols{col: schema.Columns[i]}
 			}
 		}
@@ -1574,7 +1574,7 @@ func getPartitionInfo(ctx sessionctx.Context, tbl *model.TableInfo, pairs []name
 				for i, pair := range pairs {
 					if colInfo.Name.L == pair.colName {
 						val := pair.value.GetInt64() // val cannot be Null, we've check this in func getNameValuePairs
-						unsigned := mysql.HasUnsignedFlag(col.GetType().Flag)
+						unsigned := mysql.HasUnsignedFlag(col.GetType().GetFlag())
 						ranges := partitionExpr.ForRangePruning
 						length := len(ranges.LessThan)
 						pos := sort.Search(length, func(i int) bool {
