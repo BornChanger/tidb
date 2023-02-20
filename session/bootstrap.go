@@ -553,6 +553,7 @@ const (
 )
 
 var (
+	// CreateDefaultResourceGroup is the statement to create the default resource group
 	CreateDefaultResourceGroup = fmt.Sprintf("CREATE RESOURCE GROUP `default` RU_PER_SEC=%d BURSTABLE", resourcegroup.MaxRUFillRate)
 )
 
