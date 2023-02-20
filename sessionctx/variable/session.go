@@ -65,9 +65,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-// DefaultResourceGroupName is the default resource group name.
-const DefaultResourceGroupName = "default"
-
 var (
 	// PreparedStmtCount is exported for test.
 	PreparedStmtCount int64
