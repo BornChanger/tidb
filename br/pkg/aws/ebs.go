@@ -455,10 +455,16 @@ func (e *EC2Session) getFSRCreditBalance(snapshotID *string) (float64, error) {
 				Name:  aws.String("SnapshotId"),
 				Value: snapshotID,
 			},
+			{
+				Name:  aws.String("AvailabilityZone"),
+				Value: e.cloudwatchClient.Config.Region,
+			},
 		},
 		Period:     aws.Int64(300),
 		Statistics: []*string{aws.String("Maximum")},
 	}
+
+	log.Info("metrics info", zap.Any("input", input))
 
 	// Call cloudwatchClient API to retrieve the FastSnapshotRestoreCreditsBalance metric data
 	resp, err := e.cloudwatchClient.GetMetricStatisticsWithContext(context.Background(), input)
