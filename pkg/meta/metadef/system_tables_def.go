@@ -803,6 +803,66 @@ const (
 		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 		PRIMARY KEY (tenant_id, namespace, profile_name),
 		KEY idx_updated_at (updated_at));`
+
+	// CreateTiDBAgentMemoryEpisodicTable stores episodic memories.
+	CreateTiDBAgentMemoryEpisodicTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_episodic (
+		memory_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+		tenant_id varchar(64) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		subject_id varchar(128) NOT NULL,
+		payload json NOT NULL,
+		embedding longblob,
+		importance double NOT NULL DEFAULT 0,
+		confidence double NOT NULL DEFAULT 0,
+		state enum('hot','warm','cold','archived') NOT NULL DEFAULT 'hot',
+		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+		expires_at timestamp(6) NULL DEFAULT NULL,
+		provenance json DEFAULT NULL,
+		quality json DEFAULT NULL,
+		PRIMARY KEY (memory_id),
+		KEY idx_tenant_namespace_subject_created (tenant_id, namespace, subject_id, created_at),
+		KEY idx_tenant_namespace_state (tenant_id, namespace, state));`
+
+	// CreateTiDBAgentMemorySemanticTable stores semantic memories.
+	CreateTiDBAgentMemorySemanticTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_semantic (
+		memory_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+		tenant_id varchar(64) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		subject_id varchar(128) NOT NULL,
+		payload json NOT NULL,
+		embedding longblob,
+		importance double NOT NULL DEFAULT 0,
+		confidence double NOT NULL DEFAULT 0,
+		state enum('hot','warm','cold','archived') NOT NULL DEFAULT 'hot',
+		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+		expires_at timestamp(6) NULL DEFAULT NULL,
+		provenance json DEFAULT NULL,
+		quality json DEFAULT NULL,
+		PRIMARY KEY (memory_id),
+		KEY idx_tenant_namespace_subject_created (tenant_id, namespace, subject_id, created_at),
+		KEY idx_tenant_namespace_state (tenant_id, namespace, state));`
+
+	// CreateTiDBAgentMemoryProceduralTable stores procedural memories.
+	CreateTiDBAgentMemoryProceduralTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_procedural (
+		memory_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+		tenant_id varchar(64) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		subject_id varchar(128) NOT NULL,
+		payload json NOT NULL,
+		embedding longblob,
+		importance double NOT NULL DEFAULT 0,
+		confidence double NOT NULL DEFAULT 0,
+		state enum('hot','warm','cold','archived') NOT NULL DEFAULT 'hot',
+		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+		expires_at timestamp(6) NULL DEFAULT NULL,
+		provenance json DEFAULT NULL,
+		quality json DEFAULT NULL,
+		PRIMARY KEY (memory_id),
+		KEY idx_tenant_namespace_subject_created (tenant_id, namespace, subject_id, created_at),
+		KEY idx_tenant_namespace_state (tenant_id, namespace, state));`
 )
 
 // all below are related to DDL or DXF tables

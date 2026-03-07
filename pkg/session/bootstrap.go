@@ -357,6 +357,9 @@ var (
 		{ID: metadef.TiDBKernelOptionsTableID, Name: "tidb_kernel_options", SQL: metadef.CreateTiDBKernelOptionsTable},
 		{ID: metadef.TiDBWorkloadValuesTableID, Name: "tidb_workload_values", SQL: metadef.CreateTiDBWorkloadValuesTable},
 		{ID: metadef.TiDBAgentMemoryProfileVersionTableID, Name: "tidb_agent_memory_profile_version", SQL: metadef.CreateTiDBAgentMemoryProfileVersionTable},
+		{ID: metadef.TiDBAgentMemoryEpisodicTableID, Name: "tidb_agent_memory_episodic", SQL: metadef.CreateTiDBAgentMemoryEpisodicTable},
+		{ID: metadef.TiDBAgentMemorySemanticTableID, Name: "tidb_agent_memory_semantic", SQL: metadef.CreateTiDBAgentMemorySemanticTable},
+		{ID: metadef.TiDBAgentMemoryProceduralTableID, Name: "tidb_agent_memory_procedural", SQL: metadef.CreateTiDBAgentMemoryProceduralTable},
 	}
 )
 

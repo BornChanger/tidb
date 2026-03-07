@@ -156,6 +156,12 @@ const (
 	SysDatabaseID = ReservedGlobalIDUpperBound - 61
 	// TiDBSoftDeleteTableStatusTableID is the table ID of `tidb_softdelete_table_status`.
 	TiDBSoftDeleteTableStatusTableID = ReservedGlobalIDUpperBound - 62
+	// TiDBAgentMemoryEpisodicTableID is the table ID of `tidb_agent_memory_episodic`.
+	TiDBAgentMemoryEpisodicTableID = ReservedGlobalIDUpperBound - 63
+	// TiDBAgentMemorySemanticTableID is the table ID of `tidb_agent_memory_semantic`.
+	TiDBAgentMemorySemanticTableID = ReservedGlobalIDUpperBound - 64
+	// TiDBAgentMemoryProceduralTableID is the table ID of `tidb_agent_memory_procedural`.
+	TiDBAgentMemoryProceduralTableID = ReservedGlobalIDUpperBound - 65
 )
 
 // IsReservedID checks if the given ID is a reserved global ID.
