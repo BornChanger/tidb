@@ -492,10 +492,12 @@ func TestAgentMemoryTenantContextFailClosed(t *testing.T) {
 	tk.MustExec("use mysql")
 
 	tk.MustGetErrCode("select count(*) from mysql.agent_memory_all", mysql.ErrSpecificAccessDenied)
+	tk.MustGetErrCode("select count(*) from mysql.tidb_agent_memory_profile_version", mysql.ErrSpecificAccessDenied)
 	tk.MustGetErrCode("select count(*) from mysql.tidb_agent_memory_episodic", mysql.ErrSpecificAccessDenied)
 
 	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
 	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
 	tk.MustExec("select count(*) from mysql.agent_memory_all")
+	tk.MustExec("select count(*) from mysql.tidb_agent_memory_profile_version")
 	tk.MustExec("select count(*) from mysql.tidb_agent_memory_episodic")
 }
