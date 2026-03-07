@@ -300,6 +300,32 @@ func TestBootstrapWithError(t *testing.T) {
 	require.Equal(t, "agent_memory_profile_v1", row.GetString(2))
 	require.Equal(t, uint64(1), row.GetUint64(3))
 	require.NoError(t, r.Close())
+
+	MustExec(t, se, "INSERT INTO mysql.tidb_agent_memory_episodic (tenant_id, namespace, subject_id, payload, importance, confidence, state) VALUES ('tenant_a', 'ns_a', 'subject_a', '{\"kind\":\"episodic\"}', 0.9, 0.8, 'hot')")
+	MustExec(t, se, "INSERT INTO mysql.tidb_agent_memory_semantic (tenant_id, namespace, subject_id, payload, importance, confidence, state) VALUES ('tenant_a', 'ns_a', 'subject_a', '{\"kind\":\"semantic\"}', 0.7, 0.6, 'archived')")
+	MustExec(t, se, "INSERT INTO mysql.tidb_agent_memory_procedural (tenant_id, namespace, subject_id, payload, importance, confidence, state) VALUES ('tenant_a', 'ns_a', 'subject_a', '{\"kind\":\"procedural\"}', 0.6, 0.5, 'warm')")
+	MustExec(t, se, "INSERT INTO mysql.tidb_agent_memory_episodic (tenant_id, namespace, subject_id, payload, importance, confidence, state) VALUES ('tenant_b', 'ns_b', 'subject_b', '{\"kind\":\"episodic\"}', 0.4, 0.3, 'hot')")
+
+	r = MustExecToRecodeSet(t, se, "SELECT COUNT(*) FROM mysql.agent_memory_all")
+	req = r.NewChunk(nil)
+	err = r.Next(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), req.GetRow(0).GetInt64(0))
+	require.NoError(t, r.Close())
+
+	r = MustExecToRecodeSet(t, se, "SELECT COUNT(*) FROM mysql.agent_memory_active")
+	req = r.NewChunk(nil)
+	err = r.Next(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), req.GetRow(0).GetInt64(0))
+	require.NoError(t, r.Close())
+
+	r = MustExecToRecodeSet(t, se, "SELECT COUNT(*) FROM mysql.agent_memory_for_retrieval")
+	req = r.NewChunk(nil)
+	err = r.Next(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), req.GetRow(0).GetInt64(0))
+	require.NoError(t, r.Close())
 }
 
 func TestDDLTableCreateBackfillTable(t *testing.T) {
