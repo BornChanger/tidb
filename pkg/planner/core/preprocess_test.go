@@ -485,3 +485,17 @@ func TestPreprocessDeleteFromWithAlias(t *testing.T) {
 	tk.MustExec("delete tt1 from t1 tt1,(select max(id) id from t2)tt2 where tt1.id<=tt2.id;")
 	tk.MustExec("create global binding for delete tt1 from t1 tt1,(select max(id) id from t2)tt2 where tt1.id<=tt2.id using delete /*+ MAX_EXECUTION_TIME(10)*/ tt1 from t1 tt1,(select max(id) id from t2)tt2 where tt1.id<=tt2.id;")
 }
+
+func TestAgentMemoryTenantContextFailClosed(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+
+	tk.MustGetErrCode("select count(*) from mysql.agent_memory_all", mysql.ErrSpecificAccessDenied)
+	tk.MustGetErrCode("select count(*) from mysql.tidb_agent_memory_episodic", mysql.ErrSpecificAccessDenied)
+
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("select count(*) from mysql.agent_memory_all")
+	tk.MustExec("select count(*) from mysql.tidb_agent_memory_episodic")
+}

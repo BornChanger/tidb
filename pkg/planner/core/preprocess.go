@@ -41,6 +41,7 @@ import (
 	"github.com/pingcap/tidb/pkg/planner/core/resolve"
 	"github.com/pingcap/tidb/pkg/privilege"
 	"github.com/pingcap/tidb/pkg/sessionctx"
+	"github.com/pingcap/tidb/pkg/sessionctx/vardef"
 	"github.com/pingcap/tidb/pkg/sessionctx/variable"
 	"github.com/pingcap/tidb/pkg/sessiontxn"
 	"github.com/pingcap/tidb/pkg/sessiontxn/staleread"
@@ -1767,6 +1768,10 @@ func (p *preprocessor) handleTableName(tn *ast.TableName) {
 		}
 	}
 
+	if p.err = p.checkAgentMemoryTenantContext(tn); p.err != nil {
+		return
+	}
+
 	table, err := p.tableByName(tn)
 	if err != nil {
 		p.err = err
@@ -1795,6 +1800,34 @@ func (p *preprocessor) handleTableName(tn *ast.TableName) {
 		DBInfo:    dbInfo,
 		TableInfo: tableInfo,
 	})
+}
+
+func isAgentMemoryProtectedTable(schema, table string) bool {
+	if schema != mysql.SystemDB {
+		return false
+	}
+	switch table {
+	case "tidb_agent_memory_episodic", "tidb_agent_memory_semantic", "tidb_agent_memory_procedural",
+		"agent_memory_all", "agent_memory_active", "agent_memory_for_retrieval":
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *preprocessor) checkAgentMemoryTenantContext(tn *ast.TableName) error {
+	if p.sctx.GetSessionVars().InRestrictedSQL {
+		return nil
+	}
+	if !isAgentMemoryProtectedTable(tn.Schema.L, tn.Name.L) {
+		return nil
+	}
+	tenantID, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBAgentTenantID)
+	namespace, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBAgentNamespace)
+	if tenantID == "" || namespace == "" {
+		return plannererrors.ErrSpecificAccessDenied.GenWithStackByArgs("AGENT_MEMORY_TENANT_CONTEXT")
+	}
+	return nil
 }
 
 func (p *preprocessor) checkNotInRepair(tn *ast.TableName) {

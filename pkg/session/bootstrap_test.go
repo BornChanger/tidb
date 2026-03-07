@@ -283,6 +283,10 @@ func TestBootstrapWithError(t *testing.T) {
 	// Check mysql.tidb_workload_values table
 	MustExec(t, se, "SELECT * from mysql.tidb_workload_values")
 	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_profile_version")
+	_, err = exec(se, "SELECT COUNT(*) FROM mysql.agent_memory_all")
+	require.ErrorContains(t, err, "AGENT_MEMORY_TENANT_CONTEXT")
+	MustExec(t, se, "SET @@tidb_agent_tenant_id='tenant_a'")
+	MustExec(t, se, "SET @@tidb_agent_namespace='ns_a'")
 	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_episodic")
 	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_semantic")
 	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_procedural")
@@ -430,6 +434,10 @@ func TestUpgrade(t *testing.T) {
 
 	se2 := CreateSessionAndSetID(t, store)
 	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_profile_version")
+	_, err = exec(se2, "SELECT * FROM mysql.agent_memory_all")
+	require.ErrorContains(t, err, "AGENT_MEMORY_TENANT_CONTEXT")
+	MustExec(t, se2, "SET @@tidb_agent_tenant_id='tenant_upgrade'")
+	MustExec(t, se2, "SET @@tidb_agent_namespace='ns_upgrade'")
 	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_episodic")
 	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_semantic")
 	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_procedural")
