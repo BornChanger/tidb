@@ -1313,6 +1313,10 @@ const (
 	// When set to true, skip missing partition stats and continue to merge other partition stats to global stats.
 	// When set to false, give up merging partition stats to global stats.
 	TiDBSkipMissingPartitionStats = "tidb_skip_missing_partition_stats"
+	// TiDBAgentTenantID indicates the tenant identity used by agent-memory related features.
+	TiDBAgentTenantID = "tidb_agent_tenant_id"
+	// TiDBAgentNamespace indicates the namespace (for example workspace/project scope) used by agent-memory related features.
+	TiDBAgentNamespace = "tidb_agent_namespace"
 	// TiDBSessionAlias indicates the alias of a session which is used for tracing.
 	TiDBSessionAlias = "tidb_session_alias"
 	// TiDBServiceScope indicates the role for tidb for distributed task framework.
@@ -1468,6 +1472,8 @@ const (
 	DefTiDBMemQuotaApplyCache               = 32 << 20 // 32MB.
 	DefTiDBMemQuotaBindingCache             = 64 << 20 // 64MB.
 	DefTiDBGeneralLog                       = false
+	DefTiDBAgentTenantID                    = ""
+	DefTiDBAgentNamespace                   = ""
 	DefTiDBTraceEvent                       = ""
 	DefTiDBPProfSQLCPU                      = 0
 	DefTiDBRetryLimit                       = 10

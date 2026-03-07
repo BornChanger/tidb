@@ -676,6 +676,32 @@ func TestSessionStatesSystemVar(t *testing.T) {
 	require.Equal(t, true, keep)
 }
 
+func TestAgentMemoryContextSysVars(t *testing.T) {
+	v := NewSessionVars(nil)
+	v.GlobalVarsAccessor = NewMockGlobalAccessor4Tests()
+
+	val, err := v.GetSessionOrGlobalSystemVar(context.Background(), "tidb_agent_tenant_id")
+	require.NoError(t, err)
+	require.Equal(t, "", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), "tidb_agent_namespace")
+	require.NoError(t, err)
+	require.Equal(t, "", val)
+
+	err = v.SetSystemVar("tidb_agent_tenant_id", "tenant-a")
+	require.NoError(t, err)
+	err = v.SetSystemVar("tidb_agent_namespace", "workspace/default")
+	require.NoError(t, err)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), "tidb_agent_tenant_id")
+	require.NoError(t, err)
+	require.Equal(t, "tenant-a", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), "tidb_agent_namespace")
+	require.NoError(t, err)
+	require.Equal(t, "workspace/default", val)
+}
+
 func TestOnOffHelpers(t *testing.T) {
 	require.Equal(t, "ON", trueFalseToOnOff("TRUE"))
 	require.Equal(t, "ON", trueFalseToOnOff("TRue"))

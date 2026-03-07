@@ -3704,6 +3704,8 @@ var defaultSysVars = []*SysVar{
 		}, GetGlobal: func(ctx context.Context, vars *SessionVars) (string, error) {
 			return vardef.ServiceScope.Load(), nil
 		}},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentTenantID, Value: vardef.DefTiDBAgentTenantID, Type: vardef.TypeStr},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentNamespace, Value: vardef.DefTiDBAgentNamespace, Type: vardef.TypeStr},
 	{Scope: vardef.ScopeGlobal, Name: vardef.TiDBSchemaVersionCacheLimit, Value: strconv.Itoa(vardef.DefTiDBSchemaVersionCacheLimit), Type: vardef.TypeInt, MinValue: 2, MaxValue: math.MaxUint8, AllowEmpty: true,
 		SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
 			vardef.SchemaVersionCacheLimit.Store(TidbOptInt64(val, vardef.DefTiDBSchemaVersionCacheLimit))
