@@ -4759,6 +4759,37 @@ func (b *PlanBuilder) buildDataSource(ctx context.Context, tn *ast.TableName, as
 	}
 	sessionVars.StmtCtx.TblInfo2UnionScan[tableInfo] = dirty
 
+	if !sessionVars.InRestrictedSQL && isAgentMemoryProtectedTable(dbName.L, tableInfo.Name.L) {
+		tenantID, _ := sessionVars.GetSystemVar(vardef.TiDBAgentTenantID)
+		namespace, _ := sessionVars.GetSystemVar(vardef.TiDBAgentNamespace)
+		if tenantID != "" && namespace != "" {
+			var tenantCol, namespaceCol *expression.Column
+			for i, fieldName := range result.OutputNames() {
+				switch fieldName.ColName.L {
+				case "tenant_id":
+					tenantCol = result.Schema().Columns[i]
+				case "namespace":
+					namespaceCol = result.Schema().Columns[i]
+				}
+			}
+			if tenantCol != nil && namespaceCol != nil {
+				tenantCond, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.EQ, types.NewFieldType(mysql.TypeTiny), tenantCol, expression.NewStrConst(tenantID))
+				if err != nil {
+					return nil, err
+				}
+				namespaceCond, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.EQ, types.NewFieldType(mysql.TypeTiny), namespaceCol, expression.NewStrConst(namespace))
+				if err != nil {
+					return nil, err
+				}
+				sel := logicalop.LogicalSelection{Conditions: []expression.Expression{tenantCond, namespaceCond}}.Init(b.ctx, b.getSelectOffset())
+				sel.SetChildren(result)
+				result = sel
+				b.optFlag |= rule.FlagPredicatePushDown
+				sessionVars.StmtCtx.SetSkipPlanCache("agent-memory tenant context is used")
+			}
+		}
+	}
+
 	return result, nil
 }
 
