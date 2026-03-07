@@ -791,6 +791,18 @@ const (
 		value json NOT NULL,
 		index idx_version_category_type (version, category, type),
 		index idx_table_id (table_id));`
+
+	// CreateTiDBAgentMemoryProfileVersionTable stores profile versions for agent memory context per tenant/namespace/profile.
+	CreateTiDBAgentMemoryProfileVersionTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_profile_version (
+		tenant_id varchar(128) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		profile_name varchar(128) NOT NULL,
+		profile_version bigint(20) unsigned NOT NULL DEFAULT 0,
+		etag varchar(128) NOT NULL DEFAULT '',
+		updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		PRIMARY KEY (tenant_id, namespace, profile_name),
+		KEY idx_updated_at (updated_at));`
 )
 
 // all below are related to DDL or DXF tables

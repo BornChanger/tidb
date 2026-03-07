@@ -150,10 +150,12 @@ const (
 	TiDBKernelOptionsTableID = ReservedGlobalIDUpperBound - 58
 	// TiDBWorkloadValuesTableID is the table ID of `tidb_workload_values`.
 	TiDBWorkloadValuesTableID = ReservedGlobalIDUpperBound - 59
+	// TiDBAgentMemoryProfileVersionTableID is the table ID of `tidb_agent_memory_profile_version`.
+	TiDBAgentMemoryProfileVersionTableID = ReservedGlobalIDUpperBound - 60
 	// SysDatabaseID is the database ID of `sys`.
-	SysDatabaseID = ReservedGlobalIDUpperBound - 60
+	SysDatabaseID = ReservedGlobalIDUpperBound - 61
 	// TiDBSoftDeleteTableStatusTableID is the table ID of `tidb_softdelete_table_status`.
-	TiDBSoftDeleteTableStatusTableID = ReservedGlobalIDUpperBound - 61
+	TiDBSoftDeleteTableStatusTableID = ReservedGlobalIDUpperBound - 62
 )
 
 // IsReservedID checks if the given ID is a reserved global ID.

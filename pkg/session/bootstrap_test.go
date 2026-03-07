@@ -53,7 +53,7 @@ import (
 )
 
 func TestMySQLDBTables(t *testing.T) {
-	require.Len(t, systemTablesOfBaseNextGenVersion, 52, "DO NOT CHANGE IT")
+	require.Len(t, systemTablesOfBaseNextGenVersion, 53, "DO NOT CHANGE IT")
 	for _, verBoot := range versionedBootstrapSchemas {
 		for _, schInfo := range verBoot.databases {
 			testTableBasicInfoSlice(t, schInfo.Tables, "IF NOT EXISTS mysql.%s (")
@@ -282,6 +282,7 @@ func TestBootstrapWithError(t *testing.T) {
 	MustExec(t, se, "SELECT * from mysql.tidb_ttl_table_status")
 	// Check mysql.tidb_workload_values table
 	MustExec(t, se, "SELECT * from mysql.tidb_workload_values")
+	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_profile_version")
 }
 
 func TestDDLTableCreateBackfillTable(t *testing.T) {
@@ -359,6 +360,7 @@ func TestUpgrade(t *testing.T) {
 	MustExec(t, se1, `delete from mysql.TiDB where VARIABLE_NAME="tidb_server_version"`)
 	MustExec(t, se1, "update mysql.global_variables set variable_value='off' where variable_name='tidb_enable_dist_task'")
 	MustExec(t, se1, fmt.Sprintf(`delete from mysql.global_variables where VARIABLE_NAME="%s"`, vardef.TiDBDistSQLScanConcurrency))
+	MustExec(t, se1, "drop table if exists mysql.tidb_agent_memory_profile_version")
 	MustExec(t, se1, `commit`)
 	store.SetOption(StoreBootstrappedKey, nil)
 	RevertVersionAndVariables(t, se1, 0)
@@ -369,7 +371,6 @@ func TestUpgrade(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, req.NumRows())
 	require.NoError(t, r.Close())
-
 	ver, err = GetBootstrapVersion(se1)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), ver)
@@ -379,6 +380,7 @@ func TestUpgrade(t *testing.T) {
 	require.NoError(t, err)
 
 	se2 := CreateSessionAndSetID(t, store)
+	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_profile_version")
 	r = MustExecToRecodeSet(t, se2, `SELECT VARIABLE_VALUE from mysql.TiDB where VARIABLE_NAME="tidb_server_version"`)
 	req = r.NewChunk(nil)
 	err = r.Next(ctx, req)
@@ -1867,7 +1869,7 @@ func TestBindInfoUniqueIndex(t *testing.T) {
 
 func TestVersionedBootstrapSchemas(t *testing.T) {
 	// make sure that later change won't affect existing version schemas.
-	require.Len(t, versionedBootstrapSchemas[0].databases[0].Tables, 52)
+	require.Len(t, versionedBootstrapSchemas[0].databases[0].Tables, 53)
 	require.Len(t, versionedBootstrapSchemas[0].databases[1].Tables, 0)
 
 	versions := make([]int, 0, len(versionedBootstrapSchemas))
