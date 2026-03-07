@@ -2057,4 +2057,5 @@ func upgradeToVer254(s sessionapi.Session, _ int64) {
 
 func upgradeToVer255(s sessionapi.Session, _ int64) {
 	mustExecute(s, metadef.CreateTiDBAgentMemoryProfileVersionTable)
+	initAgentMemoryProfileVersion(s)
 }

@@ -283,6 +283,17 @@ func TestBootstrapWithError(t *testing.T) {
 	// Check mysql.tidb_workload_values table
 	MustExec(t, se, "SELECT * from mysql.tidb_workload_values")
 	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_profile_version")
+	r = MustExecToRecodeSet(t, se, "SELECT tenant_id, namespace, profile_name, profile_version FROM mysql.tidb_agent_memory_profile_version")
+	req = r.NewChunk(nil)
+	err = r.Next(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 1, req.NumRows())
+	row = req.GetRow(0)
+	require.Equal(t, "default", row.GetString(0))
+	require.Equal(t, "default", row.GetString(1))
+	require.Equal(t, "agent_memory_profile_v1", row.GetString(2))
+	require.Equal(t, uint64(1), row.GetUint64(3))
+	require.NoError(t, r.Close())
 }
 
 func TestDDLTableCreateBackfillTable(t *testing.T) {
@@ -381,6 +392,17 @@ func TestUpgrade(t *testing.T) {
 
 	se2 := CreateSessionAndSetID(t, store)
 	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_profile_version")
+	r = MustExecToRecodeSet(t, se2, "SELECT tenant_id, namespace, profile_name, profile_version FROM mysql.tidb_agent_memory_profile_version")
+	req = r.NewChunk(nil)
+	err = r.Next(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 1, req.NumRows())
+	row = req.GetRow(0)
+	require.Equal(t, "default", row.GetString(0))
+	require.Equal(t, "default", row.GetString(1))
+	require.Equal(t, "agent_memory_profile_v1", row.GetString(2))
+	require.Equal(t, uint64(1), row.GetUint64(3))
+	require.NoError(t, r.Close())
 	r = MustExecToRecodeSet(t, se2, `SELECT VARIABLE_VALUE from mysql.TiDB where VARIABLE_NAME="tidb_server_version"`)
 	req = r.NewChunk(nil)
 	err = r.Next(ctx, req)

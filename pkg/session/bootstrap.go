@@ -122,7 +122,13 @@ const (
 	// The variable name in mysql.tidb table and it records the current DDLTableVersion
 	tidbDDLTableVersion = "ddl_table_version"
 	// The variable name in mysql.tidb table and it records the cluster id of this cluster
-	tidbClusterID = "cluster_id"
+	tidbClusterID                      = "cluster_id"
+	agentMemoryProfileVersionTableName = "tidb_agent_memory_profile_version"
+	agentMemoryProfileDefaultTenantID  = "default"
+	agentMemoryProfileDefaultNamespace = "default"
+	agentMemoryProfileV1Name           = "agent_memory_profile_v1"
+	agentMemoryProfileV1Version        = int64(1)
+	agentMemoryProfileV1ETag           = "v1"
 )
 
 // DDL owner key's expired time is ManagerSessionTTL seconds, we should wait the time and give more time to have a chance to finish it.
@@ -242,6 +248,27 @@ func writeOOMAction(s sessionapi.Session) {
 	comment := "oom-action is `log` by default in v3.0.x, `cancel` by default in v4.0.11+"
 	mustExecute(s, `INSERT HIGH_PRIORITY INTO %n.%n VALUES (%?, %?, %?) ON DUPLICATE KEY UPDATE VARIABLE_VALUE= %?`,
 		mysql.SystemDB, mysql.TiDBTable, tidbDefOOMAction, vardef.OOMActionLog, comment, vardef.OOMActionLog,
+	)
+}
+
+func initAgentMemoryProfileVersion(s sessionapi.Session) {
+	mustExecute(s, `INSERT HIGH_PRIORITY INTO %n.%n (
+		tenant_id,
+		namespace,
+		profile_name,
+		profile_version,
+		etag
+	) VALUES (%?, %?, %?, %?, %?)
+	ON DUPLICATE KEY UPDATE
+		profile_version = VALUES(profile_version),
+		etag = VALUES(etag)`,
+		mysql.SystemDB,
+		agentMemoryProfileVersionTableName,
+		agentMemoryProfileDefaultTenantID,
+		agentMemoryProfileDefaultNamespace,
+		agentMemoryProfileV1Name,
+		agentMemoryProfileV1Version,
+		agentMemoryProfileV1ETag,
 	)
 }
 
@@ -520,6 +547,8 @@ func doDMLWorks(s sessionapi.Session) {
 	writeDDLTableVersion(s)
 
 	writeClusterID(s)
+
+	initAgentMemoryProfileVersion(s)
 
 	ctx := kv.WithInternalSourceType(context.Background(), kv.InternalTxnBootstrap)
 	_, err := s.ExecuteInternal(ctx, "COMMIT")
