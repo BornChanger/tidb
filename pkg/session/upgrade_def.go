@@ -490,6 +490,10 @@ const (
 	// version257
 	// Add compatibility views for agent memory baseline tables.
 	version257 = 257
+
+	// version258
+	// Add mysql.tidb_agent_memory_audit baseline table.
+	version258 = 258
 )
 
 // versionedUpgradeFunction is a struct that holds the upgrade function related
@@ -503,7 +507,7 @@ type versionedUpgradeFunction struct {
 
 // currentBootstrapVersion is defined as a variable, so we can modify its value for testing.
 // please make sure this is the largest version
-var currentBootstrapVersion int64 = version257
+var currentBootstrapVersion int64 = version258
 
 var (
 	// this list must be ordered by version in ascending order, and the function
@@ -685,6 +689,7 @@ var (
 		{version: version255, fn: upgradeToVer255},
 		{version: version256, fn: upgradeToVer256},
 		{version: version257, fn: upgradeToVer257},
+		{version: version258, fn: upgradeToVer258},
 	}
 )
 
@@ -2080,4 +2085,8 @@ func upgradeToVer257(s sessionapi.Session, _ int64) {
 	mustExecute(s, metadef.CreateTiDBAgentMemoryAllView)
 	mustExecute(s, metadef.CreateTiDBAgentMemoryActiveView)
 	mustExecute(s, metadef.CreateTiDBAgentMemoryForRetrievalView)
+}
+
+func upgradeToVer258(s sessionapi.Session, _ int64) {
+	mustExecute(s, metadef.CreateTiDBAgentMemoryAuditTable)
 }

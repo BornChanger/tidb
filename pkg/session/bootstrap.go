@@ -360,6 +360,7 @@ var (
 		{ID: metadef.TiDBAgentMemoryEpisodicTableID, Name: "tidb_agent_memory_episodic", SQL: metadef.CreateTiDBAgentMemoryEpisodicTable},
 		{ID: metadef.TiDBAgentMemorySemanticTableID, Name: "tidb_agent_memory_semantic", SQL: metadef.CreateTiDBAgentMemorySemanticTable},
 		{ID: metadef.TiDBAgentMemoryProceduralTableID, Name: "tidb_agent_memory_procedural", SQL: metadef.CreateTiDBAgentMemoryProceduralTable},
+		{ID: metadef.TiDBAgentMemoryAuditTableID, Name: "tidb_agent_memory_audit", SQL: metadef.CreateTiDBAgentMemoryAuditTable},
 	}
 )
 

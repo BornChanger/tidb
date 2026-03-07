@@ -162,6 +162,8 @@ const (
 	TiDBAgentMemorySemanticTableID = ReservedGlobalIDUpperBound - 64
 	// TiDBAgentMemoryProceduralTableID is the table ID of `tidb_agent_memory_procedural`.
 	TiDBAgentMemoryProceduralTableID = ReservedGlobalIDUpperBound - 65
+	// TiDBAgentMemoryAuditTableID is the table ID of `tidb_agent_memory_audit`.
+	TiDBAgentMemoryAuditTableID = ReservedGlobalIDUpperBound - 66
 )
 
 // IsReservedID checks if the given ID is a reserved global ID.

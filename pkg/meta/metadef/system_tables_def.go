@@ -864,6 +864,21 @@ const (
 		KEY idx_tenant_namespace_subject_created (tenant_id, namespace, subject_id, created_at),
 		KEY idx_tenant_namespace_state (tenant_id, namespace, state));`
 
+	// CreateTiDBAgentMemoryAuditTable stores baseline audit records for memory operations.
+	CreateTiDBAgentMemoryAuditTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_audit (
+		audit_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+		tenant_id varchar(128) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		actor varchar(128) NOT NULL DEFAULT '',
+		action enum('read','write','delete','policy_denied') NOT NULL,
+		object_type varchar(64) NOT NULL,
+		object_id varchar(128) NOT NULL DEFAULT '',
+		reason varchar(256) NOT NULL DEFAULT '',
+		event_time timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		PRIMARY KEY (audit_id),
+		KEY idx_tenant_namespace_time (tenant_id, namespace, event_time),
+		KEY idx_action_time (action, event_time));`
+
 	// CreateTiDBAgentMemoryAllView provides a unified read surface for all memory classes.
 	CreateTiDBAgentMemoryAllView = `CREATE OR REPLACE SQL SECURITY INVOKER VIEW mysql.agent_memory_all AS
 		SELECT

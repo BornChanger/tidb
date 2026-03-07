@@ -53,7 +53,7 @@ import (
 )
 
 func TestMySQLDBTables(t *testing.T) {
-	require.Len(t, systemTablesOfBaseNextGenVersion, 56, "DO NOT CHANGE IT")
+	require.Len(t, systemTablesOfBaseNextGenVersion, 57, "DO NOT CHANGE IT")
 	for _, verBoot := range versionedBootstrapSchemas {
 		for _, schInfo := range verBoot.databases {
 			testTableBasicInfoSlice(t, schInfo.Tables, "IF NOT EXISTS mysql.%s (")
@@ -292,6 +292,7 @@ func TestBootstrapWithError(t *testing.T) {
 	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_episodic")
 	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_semantic")
 	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_procedural")
+	MustExec(t, se, "SELECT * from mysql.tidb_agent_memory_audit")
 	MustExec(t, se, "SELECT * from mysql.agent_memory_all")
 	MustExec(t, se, "SELECT * from mysql.agent_memory_active")
 	MustExec(t, se, "SELECT * from mysql.agent_memory_for_retrieval")
@@ -433,6 +434,7 @@ func TestUpgrade(t *testing.T) {
 	MustExec(t, se1, "drop table if exists mysql.tidb_agent_memory_episodic")
 	MustExec(t, se1, "drop table if exists mysql.tidb_agent_memory_semantic")
 	MustExec(t, se1, "drop table if exists mysql.tidb_agent_memory_procedural")
+	MustExec(t, se1, "drop table if exists mysql.tidb_agent_memory_audit")
 	MustExec(t, se1, "drop view if exists mysql.agent_memory_all")
 	MustExec(t, se1, "drop view if exists mysql.agent_memory_active")
 	MustExec(t, se1, "drop view if exists mysql.agent_memory_for_retrieval")
@@ -465,6 +467,7 @@ func TestUpgrade(t *testing.T) {
 	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_episodic")
 	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_semantic")
 	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_procedural")
+	MustExec(t, se2, "SELECT * FROM mysql.tidb_agent_memory_audit")
 	MustExec(t, se2, "SELECT * FROM mysql.agent_memory_all")
 	MustExec(t, se2, "SELECT * FROM mysql.agent_memory_active")
 	MustExec(t, se2, "SELECT * FROM mysql.agent_memory_for_retrieval")
@@ -1967,7 +1970,7 @@ func TestBindInfoUniqueIndex(t *testing.T) {
 
 func TestVersionedBootstrapSchemas(t *testing.T) {
 	// make sure that later change won't affect existing version schemas.
-	require.Len(t, versionedBootstrapSchemas[0].databases[0].Tables, 56)
+	require.Len(t, versionedBootstrapSchemas[0].databases[0].Tables, 57)
 	require.Len(t, versionedBootstrapSchemas[0].databases[1].Tables, 0)
 
 	versions := make([]int, 0, len(versionedBootstrapSchemas))
