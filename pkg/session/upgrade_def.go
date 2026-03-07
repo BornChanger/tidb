@@ -486,6 +486,10 @@ const (
 	// version256
 	// Add mysql.tidb_agent_memory_{episodic,semantic,procedural} baseline tables.
 	version256 = 256
+
+	// version257
+	// Add compatibility views for agent memory baseline tables.
+	version257 = 257
 )
 
 // versionedUpgradeFunction is a struct that holds the upgrade function related
@@ -499,7 +503,7 @@ type versionedUpgradeFunction struct {
 
 // currentBootstrapVersion is defined as a variable, so we can modify its value for testing.
 // please make sure this is the largest version
-var currentBootstrapVersion int64 = version256
+var currentBootstrapVersion int64 = version257
 
 var (
 	// this list must be ordered by version in ascending order, and the function
@@ -680,6 +684,7 @@ var (
 		{version: version254, fn: upgradeToVer254},
 		{version: version255, fn: upgradeToVer255},
 		{version: version256, fn: upgradeToVer256},
+		{version: version257, fn: upgradeToVer257},
 	}
 )
 
@@ -2069,4 +2074,10 @@ func upgradeToVer256(s sessionapi.Session, _ int64) {
 	mustExecute(s, metadef.CreateTiDBAgentMemoryEpisodicTable)
 	mustExecute(s, metadef.CreateTiDBAgentMemorySemanticTable)
 	mustExecute(s, metadef.CreateTiDBAgentMemoryProceduralTable)
+}
+
+func upgradeToVer257(s sessionapi.Session, _ int64) {
+	mustExecute(s, metadef.CreateTiDBAgentMemoryAllView)
+	mustExecute(s, metadef.CreateTiDBAgentMemoryActiveView)
+	mustExecute(s, metadef.CreateTiDBAgentMemoryForRetrievalView)
 }

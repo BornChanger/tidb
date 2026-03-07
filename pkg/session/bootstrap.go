@@ -436,6 +436,9 @@ func doDDLWorks(s sessionapi.Session) {
 	mustExecute(s, metadef.CreateTiDBMDLView)
 	// create `sys.schema_unused_indexes` view
 	mustExecute(s, metadef.CreateSchemaUnusedIndexesView)
+	mustExecute(s, metadef.CreateTiDBAgentMemoryAllView)
+	mustExecute(s, metadef.CreateTiDBAgentMemoryActiveView)
+	mustExecute(s, metadef.CreateTiDBAgentMemoryForRetrievalView)
 	// Create a test database.
 	mustExecute(s, "CREATE DATABASE IF NOT EXISTS test")
 }

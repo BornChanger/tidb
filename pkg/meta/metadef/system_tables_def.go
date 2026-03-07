@@ -863,6 +863,85 @@ const (
 		PRIMARY KEY (memory_id),
 		KEY idx_tenant_namespace_subject_created (tenant_id, namespace, subject_id, created_at),
 		KEY idx_tenant_namespace_state (tenant_id, namespace, state));`
+
+	// CreateTiDBAgentMemoryAllView provides a unified read surface for all memory classes.
+	CreateTiDBAgentMemoryAllView = `CREATE OR REPLACE SQL SECURITY INVOKER VIEW mysql.agent_memory_all AS
+		SELECT
+			'episodic' AS memory_type,
+			memory_id,
+			tenant_id,
+			namespace,
+			subject_id,
+			payload,
+			embedding,
+			importance,
+			confidence,
+			state,
+			created_at,
+			updated_at,
+			expires_at,
+			provenance,
+			quality
+		FROM mysql.tidb_agent_memory_episodic
+		UNION ALL
+		SELECT
+			'semantic' AS memory_type,
+			memory_id,
+			tenant_id,
+			namespace,
+			subject_id,
+			payload,
+			embedding,
+			importance,
+			confidence,
+			state,
+			created_at,
+			updated_at,
+			expires_at,
+			provenance,
+			quality
+		FROM mysql.tidb_agent_memory_semantic
+		UNION ALL
+		SELECT
+			'procedural' AS memory_type,
+			memory_id,
+			tenant_id,
+			namespace,
+			subject_id,
+			payload,
+			embedding,
+			importance,
+			confidence,
+			state,
+			created_at,
+			updated_at,
+			expires_at,
+			provenance,
+			quality
+		FROM mysql.tidb_agent_memory_procedural;`
+
+	// CreateTiDBAgentMemoryActiveView hides archived memories by default.
+	CreateTiDBAgentMemoryActiveView = `CREATE OR REPLACE SQL SECURITY INVOKER VIEW mysql.agent_memory_active AS
+		SELECT *
+		FROM mysql.agent_memory_all
+		WHERE state != 'archived';`
+
+	// CreateTiDBAgentMemoryForRetrievalView provides retrieval-safe projection.
+	CreateTiDBAgentMemoryForRetrievalView = `CREATE OR REPLACE SQL SECURITY INVOKER VIEW mysql.agent_memory_for_retrieval AS
+		SELECT
+			memory_type,
+			memory_id,
+			tenant_id,
+			namespace,
+			subject_id,
+			payload,
+			embedding,
+			importance,
+			confidence,
+			state,
+			created_at,
+			expires_at
+		FROM mysql.agent_memory_active;`
 )
 
 // all below are related to DDL or DXF tables
