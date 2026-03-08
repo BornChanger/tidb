@@ -1825,13 +1825,29 @@ func (p *preprocessor) checkAgentMemoryTenantContext(tn *ast.TableName) error {
 	tenantID, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBAgentTenantID)
 	namespace, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBAgentNamespace)
 	if tenantID == "" || namespace == "" {
-		p.recordAgentMemoryPolicyDeniedAudit(tn, tenantID, namespace)
+		p.recordAgentMemoryAudit(tn, tenantID, namespace, "policy_denied", "missing_tenant_or_namespace_context")
 		return plannererrors.ErrSpecificAccessDenied.GenWithStackByArgs("AGENT_MEMORY_TENANT_CONTEXT")
+	}
+	if action := p.agentMemoryAuditAction(); action != "" {
+		p.recordAgentMemoryAudit(tn, tenantID, namespace, action, "")
 	}
 	return nil
 }
 
-func (p *preprocessor) recordAgentMemoryPolicyDeniedAudit(tn *ast.TableName, tenantID, namespace string) {
+func (p *preprocessor) agentMemoryAuditAction() string {
+	switch p.stmtTp {
+	case TypeSelect, TypeSetOpr:
+		return "read"
+	case TypeInsert, TypeUpdate:
+		return "write"
+	case TypeDelete:
+		return "delete"
+	default:
+		return ""
+	}
+}
+
+func (p *preprocessor) recordAgentMemoryAudit(tn *ast.TableName, tenantID, namespace, action, reason string) {
 	exec := p.sctx.GetRestrictedSQLExecutor()
 	if exec == nil {
 		return
@@ -1848,8 +1864,8 @@ func (p *preprocessor) recordAgentMemoryPolicyDeniedAudit(tn *ast.TableName, ten
 	}
 	ctx := kv.WithInternalSourceType(context.Background(), kv.InternalTxnOthers)
 	_, _, _ = exec.ExecRestrictedSQL(ctx, nil,
-		"INSERT INTO mysql.tidb_agent_memory_audit (tenant_id, namespace, actor, action, object_type, object_id, reason) VALUES (%?, %?, %?, 'policy_denied', 'table', %?, 'missing_tenant_or_namespace_context')",
-		tenantID, namespace, actor, fmt.Sprintf("%s.%s", tn.Schema.L, tn.Name.L),
+		"INSERT INTO mysql.tidb_agent_memory_audit (tenant_id, namespace, actor, action, object_type, object_id, reason) VALUES (%?, %?, %?, %?, 'table', %?, %?)",
+		tenantID, namespace, actor, action, fmt.Sprintf("%s.%s", tn.Schema.L, tn.Name.L), reason,
 	)
 }
 
