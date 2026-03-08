@@ -1807,7 +1807,7 @@ func isAgentMemoryProtectedTable(schema, table string) bool {
 		return false
 	}
 	switch table {
-	case "tidb_agent_memory_profile_version", "tidb_agent_memory_episodic", "tidb_agent_memory_semantic", "tidb_agent_memory_procedural",
+	case "tidb_agent_memory_profile_version", "tidb_agent_memory_episodic", "tidb_agent_memory_semantic", "tidb_agent_memory_procedural", "tidb_agent_memory_audit",
 		"agent_memory_all", "agent_memory_active", "agent_memory_for_retrieval":
 		return true
 	default:
