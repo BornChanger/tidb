@@ -1825,9 +1825,32 @@ func (p *preprocessor) checkAgentMemoryTenantContext(tn *ast.TableName) error {
 	tenantID, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBAgentTenantID)
 	namespace, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBAgentNamespace)
 	if tenantID == "" || namespace == "" {
+		p.recordAgentMemoryPolicyDeniedAudit(tn, tenantID, namespace)
 		return plannererrors.ErrSpecificAccessDenied.GenWithStackByArgs("AGENT_MEMORY_TENANT_CONTEXT")
 	}
 	return nil
+}
+
+func (p *preprocessor) recordAgentMemoryPolicyDeniedAudit(tn *ast.TableName, tenantID, namespace string) {
+	exec := p.sctx.GetRestrictedSQLExecutor()
+	if exec == nil {
+		return
+	}
+	if tenantID == "" {
+		tenantID = "__missing__"
+	}
+	if namespace == "" {
+		namespace = "__missing__"
+	}
+	actor := ""
+	if user := p.sctx.GetSessionVars().User; user != nil {
+		actor = user.String()
+	}
+	ctx := kv.WithInternalSourceType(context.Background(), kv.InternalTxnOthers)
+	_, _, _ = exec.ExecRestrictedSQL(ctx, nil,
+		"INSERT INTO mysql.tidb_agent_memory_audit (tenant_id, namespace, actor, action, object_type, object_id, reason) VALUES (%?, %?, %?, 'policy_denied', 'table', %?, 'missing_tenant_or_namespace_context')",
+		tenantID, namespace, actor, fmt.Sprintf("%s.%s", tn.Schema.L, tn.Name.L),
+	)
 }
 
 func (p *preprocessor) checkNotInRepair(tn *ast.TableName) {
