@@ -1317,6 +1317,42 @@ const (
 	TiDBAgentTenantID = "tidb_agent_tenant_id"
 	// TiDBAgentNamespace indicates the namespace (for example workspace/project scope) used by agent-memory related features.
 	TiDBAgentNamespace = "tidb_agent_namespace"
+	// TiDBEnableAgentMemoryHybridRetrieval indicates whether the Milestone-B hybrid retrieval path is enabled.
+	TiDBEnableAgentMemoryHybridRetrieval = "tidb_enable_agent_memory_hybrid_retrieval"
+	// TiDBEnableAgentMemoryContextAssembly indicates whether the Milestone-B context assembly path is enabled.
+	TiDBEnableAgentMemoryContextAssembly = "tidb_enable_agent_memory_context_assembly"
+	// TiDBEnableAgentMemoryLifecycleScheduler indicates whether the Milestone-B lifecycle scheduler path is enabled.
+	TiDBEnableAgentMemoryLifecycleScheduler = "tidb_enable_agent_memory_lifecycle_scheduler"
+	// TiDBAgentMemoryRetrieveCandidateN indicates the upper bound of candidate rows before final top-k selection.
+	TiDBAgentMemoryRetrieveCandidateN = "tidb_agent_memory_retrieve_candidate_n"
+	// TiDBAgentMemoryRetrieveLimitK indicates the output top-k size for hybrid retrieval.
+	TiDBAgentMemoryRetrieveLimitK = "tidb_agent_memory_retrieve_limit_k"
+	// TiDBAgentMemoryRetrieveRecencyHalfLifeSeconds controls recency decay half-life in seconds.
+	TiDBAgentMemoryRetrieveRecencyHalfLifeSeconds = "tidb_agent_memory_retrieve_recency_half_life_seconds"
+	// TiDBAgentMemoryRetrieveWeightVector controls the vector component weight in score fusion.
+	TiDBAgentMemoryRetrieveWeightVector = "tidb_agent_memory_retrieve_weight_vector"
+	// TiDBAgentMemoryRetrieveWeightRecency controls the recency component weight in score fusion.
+	TiDBAgentMemoryRetrieveWeightRecency = "tidb_agent_memory_retrieve_weight_recency"
+	// TiDBAgentMemoryRetrieveWeightImportance controls the importance component weight in score fusion.
+	TiDBAgentMemoryRetrieveWeightImportance = "tidb_agent_memory_retrieve_weight_importance"
+	// TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy controls fallback token estimator strategy used by context assembly.
+	TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy = "tidb_agent_memory_context_assembly_token_estimator_strategy"
+	// TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier controls provider-profile token estimator multiplier.
+	TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier = "tidb_agent_memory_context_assembly_token_estimator_provider_multiplier"
+	// TiDBAgentMemoryContextAssemblyTotalBudgetTokens controls the total token budget used by context assembly.
+	TiDBAgentMemoryContextAssemblyTotalBudgetTokens = "tidb_agent_memory_context_assembly_total_budget_tokens"
+	// TiDBAgentMemoryContextAssemblyReservedOutputTokens controls output-reserved tokens deducted from context assembly budget.
+	TiDBAgentMemoryContextAssemblyReservedOutputTokens = "tidb_agent_memory_context_assembly_reserved_output_tokens"
+	// TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio controls the ratio of safety-margin tokens deducted from context assembly budget.
+	TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio = "tidb_agent_memory_context_assembly_budget_safety_margin_ratio"
+	// TiDBAgentMemoryTraceEnable indicates whether agent-memory trace emission is enabled.
+	TiDBAgentMemoryTraceEnable = "tidb_agent_memory_trace_enable"
+	// TiDBAgentMemoryTraceSampleRatio controls the success-path sampling ratio for agent-memory traces.
+	TiDBAgentMemoryTraceSampleRatio = "tidb_agent_memory_trace_sample_ratio"
+	// TiDBAgentMemoryTraceMaxItems controls the maximum number of trace items emitted per operation.
+	TiDBAgentMemoryTraceMaxItems = "tidb_agent_memory_trace_max_items"
+	// TiDBAgentMemoryTraceCapturePayload indicates whether trace items can include raw payload.
+	TiDBAgentMemoryTraceCapturePayload = "tidb_agent_memory_trace_capture_payload"
 	// TiDBSessionAlias indicates the alias of a session which is used for tracing.
 	TiDBSessionAlias = "tidb_session_alias"
 	// TiDBServiceScope indicates the role for tidb for distributed task framework.
@@ -1778,6 +1814,28 @@ const (
 	DefTiDBMemArbitratorQueryReservedText             = "0"
 	DefTiDBMemArbitratorWaitAverse                    = "0"
 	DefTiDBIndexLookUpPushDownPolicy                  = IndexLookUpPushDownPolicyHintOnly
+)
+
+// Default values for agent-memory Milestone-B retrieval/session controls.
+const (
+	DefTiDBEnableAgentMemoryHybridRetrieval                           = false
+	DefTiDBEnableAgentMemoryContextAssembly                           = false
+	DefTiDBEnableAgentMemoryLifecycleScheduler                        = false
+	DefTiDBAgentMemoryRetrieveCandidateN                              = 200
+	DefTiDBAgentMemoryRetrieveLimitK                                  = 20
+	DefTiDBAgentMemoryRetrieveRecencyHalfLifeSeconds                  = 7 * 24 * 60 * 60
+	DefTiDBAgentMemoryRetrieveWeightVector                            = 0.55
+	DefTiDBAgentMemoryRetrieveWeightRecency                           = 0.25
+	DefTiDBAgentMemoryRetrieveWeightImportance                        = 0.20
+	DefTiDBAgentMemoryContextAssemblyTokenEstimatorStrategy           = "approx_char_based"
+	DefTiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier = 1.0
+	DefTiDBAgentMemoryContextAssemblyTotalBudgetTokens                = 4096
+	DefTiDBAgentMemoryContextAssemblyReservedOutputTokens             = 512
+	DefTiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio          = 0.05
+	DefTiDBAgentMemoryTraceEnable                                     = false
+	DefTiDBAgentMemoryTraceSampleRatio                                = 0.05
+	DefTiDBAgentMemoryTraceMaxItems                                   = 100
+	DefTiDBAgentMemoryTraceCapturePayload                             = false
 )
 
 // Process global variables.

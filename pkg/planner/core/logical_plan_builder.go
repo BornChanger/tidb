@@ -2145,6 +2145,440 @@ func (b *PlanBuilder) buildLimit(src base.LogicalPlan, limit *ast.Limit, targetQ
 	return li, nil
 }
 
+type agentMemoryHybridRuntimeConfig struct {
+	enabled                bool
+	candidateN             uint64
+	outputK                uint64
+	recencyHalfLifeSeconds float64
+	weights                agentMemoryRetrieveWeights
+	vectorOrderExpr        ast.ExprNode
+	contextAssemblyEnabled bool
+	effectiveBudgetTokens  int
+	tokenEstimatorStrategy agentMemoryTokenEstimatorStrategy
+	tokenEstimatorMul      float64
+}
+
+func parseAgentMemoryFloatSessionVar(vars *variable.SessionVars, name string, def float64) float64 {
+	val, ok := vars.GetSystemVar(name)
+	if !ok {
+		return def
+	}
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+	if err != nil {
+		return def
+	}
+	return parsed
+}
+
+func findAgentMemoryVectorOrderByItem(orderBy *ast.OrderByClause) *ast.ByItem {
+	if orderBy == nil {
+		return nil
+	}
+	for _, item := range orderBy.Items {
+		if item == nil || item.Expr == nil {
+			continue
+		}
+		if hasAgentMemoryVectorDistanceOnEmbedding(item.Expr) {
+			return item
+		}
+	}
+	return nil
+}
+
+func (b *PlanBuilder) selectFromSingleAgentMemoryRetrievalTable(sel *ast.SelectStmt) bool {
+	if sel == nil || sel.From == nil || sel.From.TableRefs == nil {
+		return false
+	}
+	if sel.From.TableRefs.Right != nil {
+		return false
+	}
+	tableSource, ok := sel.From.TableRefs.Left.(*ast.TableSource)
+	if !ok || tableSource == nil {
+		return false
+	}
+	tableName, ok := tableSource.Source.(*ast.TableName)
+	if !ok || tableName == nil {
+		return false
+	}
+	dbName := getLowerDB(tableName.Schema, b.ctx.GetSessionVars())
+	return isAgentMemoryRetrievalTable(dbName, tableName.Name.L)
+}
+
+func (b *PlanBuilder) prepareAgentMemoryHybridRuntimeConfig(sel *ast.SelectStmt) (agentMemoryHybridRuntimeConfig, error) {
+	config := agentMemoryHybridRuntimeConfig{}
+	if sel == nil || sel.OrderBy == nil || sel.Limit == nil || sel.From == nil {
+		return config, nil
+	}
+	if sel.Distinct || sel.GroupBy != nil || sel.Having != nil || sel.WindowSpecs != nil {
+		return config, nil
+	}
+	if !b.selectFromSingleAgentMemoryRetrievalTable(sel) {
+		return config, nil
+	}
+	vectorOrderItem := findAgentMemoryVectorOrderByItem(sel.OrderBy)
+	if vectorOrderItem == nil || vectorOrderItem.Desc {
+		return config, nil
+	}
+	enableHybridRetrieval, _ := b.ctx.GetSessionVars().GetSystemVar(vardef.TiDBEnableAgentMemoryHybridRetrieval)
+	if !variable.TiDBOptOn(enableHybridRetrieval) {
+		return config, nil
+	}
+	queryLimitCount, queryOffset, err := extractLimitCountOffset(b.ctx.GetExprCtx(), sel.Limit)
+	if err != nil {
+		return config, err
+	}
+	if queryOffset > 0 {
+		return config, nil
+	}
+	vars := b.ctx.GetSessionVars()
+	candidateNVal, _ := vars.GetSystemVar(vardef.TiDBAgentMemoryRetrieveCandidateN)
+	candidateN := uint64(variable.TidbOptInt64(candidateNVal, vardef.DefTiDBAgentMemoryRetrieveCandidateN))
+	limitKVal, _ := vars.GetSystemVar(vardef.TiDBAgentMemoryRetrieveLimitK)
+	limitK := uint64(variable.TidbOptInt64(limitKVal, vardef.DefTiDBAgentMemoryRetrieveLimitK))
+	if limitK == 0 {
+		limitK = uint64(vardef.DefTiDBAgentMemoryRetrieveLimitK)
+	}
+	outputK := queryLimitCount
+	if outputK > limitK {
+		outputK = limitK
+	}
+	if candidateN < outputK {
+		candidateN = outputK
+	}
+	weights := agentMemoryRetrieveWeights{
+		vectorWeight:     parseAgentMemoryFloatSessionVar(vars, vardef.TiDBAgentMemoryRetrieveWeightVector, vardef.DefTiDBAgentMemoryRetrieveWeightVector),
+		recencyWeight:    parseAgentMemoryFloatSessionVar(vars, vardef.TiDBAgentMemoryRetrieveWeightRecency, vardef.DefTiDBAgentMemoryRetrieveWeightRecency),
+		importanceWeight: parseAgentMemoryFloatSessionVar(vars, vardef.TiDBAgentMemoryRetrieveWeightImportance, vardef.DefTiDBAgentMemoryRetrieveWeightImportance),
+	}
+	if err := validateAgentMemoryRetrieveWeights(weights); err != nil {
+		return config, err
+	}
+	halfLifeSeconds := parseAgentMemoryFloatSessionVar(vars, vardef.TiDBAgentMemoryRetrieveRecencyHalfLifeSeconds, float64(vardef.DefTiDBAgentMemoryRetrieveRecencyHalfLifeSeconds))
+	if halfLifeSeconds <= 0 {
+		halfLifeSeconds = float64(vardef.DefTiDBAgentMemoryRetrieveRecencyHalfLifeSeconds)
+	}
+	enableContextAssembly, _ := vars.GetSystemVar(vardef.TiDBEnableAgentMemoryContextAssembly)
+	contextAssemblyEnabled := variable.TiDBOptOn(enableContextAssembly)
+	effectiveBudgetTokens := 0
+	tokenEstimatorStrategy := agentMemoryTokenEstimatorApproxCharBased
+	tokenEstimatorMul := float64(1)
+	if contextAssemblyEnabled {
+		totalBudgetTokensVal, _ := vars.GetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens)
+		reservedOutputTokensVal, _ := vars.GetSystemVar(vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens)
+		tokenEstimatorStrategyVal, _ := vars.GetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy)
+		budgetSafetyMarginRatio := parseAgentMemoryFloatSessionVar(vars, vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio, vardef.DefTiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio)
+		tokenEstimatorMulVal := parseAgentMemoryFloatSessionVar(vars, vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier, vardef.DefTiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier)
+		contextAssemblyPolicy := agentMemoryContextAssemblyPolicy{
+			totalBudgetTokens:                int(variable.TidbOptInt64(totalBudgetTokensVal, vardef.DefTiDBAgentMemoryContextAssemblyTotalBudgetTokens)),
+			reservedOutputTokens:             int(variable.TidbOptInt64(reservedOutputTokensVal, vardef.DefTiDBAgentMemoryContextAssemblyReservedOutputTokens)),
+			budgetSafetyMarginRatio:          budgetSafetyMarginRatio,
+			tokenEstimatorStrategy:           agentMemoryTokenEstimatorStrategy(tokenEstimatorStrategyVal),
+			tokenEstimatorProviderMultiplier: tokenEstimatorMulVal,
+		}
+		effectiveBudgetTokens, err = validateAgentMemoryContextAssemblyPolicy(contextAssemblyPolicy)
+		if err != nil {
+			return config, err
+		}
+		tokenEstimatorStrategy, tokenEstimatorMul, err = normalizeAgentMemoryTokenEstimatorPolicy(contextAssemblyPolicy)
+		if err != nil {
+			return config, err
+		}
+	}
+	config = agentMemoryHybridRuntimeConfig{
+		enabled:                true,
+		candidateN:             candidateN,
+		outputK:                outputK,
+		recencyHalfLifeSeconds: halfLifeSeconds,
+		weights:                weights,
+		vectorOrderExpr:        vectorOrderItem.Expr,
+		contextAssemblyEnabled: contextAssemblyEnabled,
+		effectiveBudgetTokens:  effectiveBudgetTokens,
+		tokenEstimatorStrategy: tokenEstimatorStrategy,
+		tokenEstimatorMul:      tokenEstimatorMul,
+	}
+	return config, nil
+}
+
+func appendAgentMemoryHybridAuxiliaryColumn(sel *ast.SelectStmt, colName string) {
+	for _, field := range sel.Fields.Fields {
+		colExpr, ok := field.Expr.(*ast.ColumnNameExpr)
+		if !ok || colExpr.Name == nil {
+			continue
+		}
+		if colExpr.Name.Name.L == colName {
+			return
+		}
+	}
+	sel.Fields.Fields = append(sel.Fields.Fields, &ast.SelectField{
+		Expr:      &ast.ColumnNameExpr{Name: &ast.ColumnName{Name: ast.NewCIStr(colName)}},
+		Auxiliary: true,
+	})
+}
+
+func appendAgentMemoryHybridAuxiliaryFields(sel *ast.SelectStmt, includePayload bool) {
+	colNames := []string{"embedding", "importance", "created_at", "memory_type", "memory_id"}
+	if includePayload {
+		colNames = append(colNames, "payload")
+	}
+	for _, colName := range colNames {
+		appendAgentMemoryHybridAuxiliaryColumn(sel, colName)
+	}
+}
+
+func findOutputColumnByName(p base.LogicalPlan, colName string) *expression.Column {
+	for i := len(p.OutputNames()) - 1; i >= 0; i-- {
+		name := p.OutputNames()[i]
+		if name != nil && name.ColName.L == colName {
+			return p.Schema().Columns[i]
+		}
+	}
+	return nil
+}
+
+func newAgentMemoryFloatConstant(value float64) *expression.Constant {
+	return &expression.Constant{
+		Value:   types.NewDatum(value),
+		RetType: types.NewFieldType(mysql.TypeDouble),
+	}
+}
+
+func buildAgentMemoryLimitNode(count uint64) *ast.Limit {
+	return &ast.Limit{Count: ast.NewValueExpr(count, "", "")}
+}
+
+func (b *PlanBuilder) buildAgentMemoryHybridRerank(ctx context.Context, p base.LogicalPlan, config agentMemoryHybridRuntimeConfig) (base.LogicalPlan, error) {
+	embeddingCol := findOutputColumnByName(p, "embedding")
+	importanceCol := findOutputColumnByName(p, "importance")
+	createdAtCol := findOutputColumnByName(p, "created_at")
+	memoryTypeCol := findOutputColumnByName(p, "memory_type")
+	memoryIDCol := findOutputColumnByName(p, "memory_id")
+	if embeddingCol == nil || importanceCol == nil || createdAtCol == nil || memoryTypeCol == nil || memoryIDCol == nil {
+		return nil, errors.New("agent-memory hybrid retrieval requires embedding, importance, created_at, memory_type and memory_id columns")
+	}
+	payloadCol := findOutputColumnByName(p, "payload")
+	if config.contextAssemblyEnabled && payloadCol == nil {
+		return nil, errors.New("agent-memory hybrid retrieval requires payload column when context assembly is enabled")
+	}
+
+	vectorDistanceExpr, np, err := b.rewriteWithPreprocess(ctx, config.vectorOrderExpr, p, nil, nil, true, nil)
+	if err != nil {
+		return nil, err
+	}
+	p = np
+
+	realType := types.NewFieldType(mysql.TypeDouble)
+	oneConst := newAgentMemoryFloatConstant(1)
+	zeroConst := newAgentMemoryFloatConstant(0)
+	halfConst := newAgentMemoryFloatConstant(0.5)
+	fourConst := newAgentMemoryFloatConstant(4)
+	importanceDefaultConst := newAgentMemoryFloatConstant(0.5)
+	halfLifeSecondsConst := newAgentMemoryFloatConstant(config.recencyHalfLifeSeconds)
+
+	vectorScoreRaw, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Minus, realType, oneConst, vectorDistanceExpr)
+	if err != nil {
+		return nil, err
+	}
+	vectorScoreFloor, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Greatest, realType, zeroConst, vectorScoreRaw)
+	if err != nil {
+		return nil, err
+	}
+	vectorScoreExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Least, realType, oneConst, vectorScoreFloor)
+	if err != nil {
+		return nil, err
+	}
+
+	importanceFilledExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Ifnull, realType, importanceCol, importanceDefaultConst)
+	if err != nil {
+		return nil, err
+	}
+	importanceScoreFloor, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Greatest, realType, zeroConst, importanceFilledExpr)
+	if err != nil {
+		return nil, err
+	}
+	importanceScoreExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Least, realType, oneConst, importanceScoreFloor)
+	if err != nil {
+		return nil, err
+	}
+
+	nowExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Now, types.NewFieldType(mysql.TypeDatetime))
+	if err != nil {
+		return nil, err
+	}
+	nowUnixExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.UnixTimestamp, realType, nowExpr)
+	if err != nil {
+		return nil, err
+	}
+	createdAtUnixExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.UnixTimestamp, realType, createdAtCol)
+	if err != nil {
+		return nil, err
+	}
+	ageSecondsRawExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Minus, realType, nowUnixExpr, createdAtUnixExpr)
+	if err != nil {
+		return nil, err
+	}
+	ageSecondsExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Greatest, realType, zeroConst, ageSecondsRawExpr)
+	if err != nil {
+		return nil, err
+	}
+	ageRatioExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Div, realType, ageSecondsExpr, halfLifeSecondsConst)
+	if err != nil {
+		return nil, err
+	}
+	recencyScoreRawExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Pow, realType, halfConst, ageRatioExpr)
+	if err != nil {
+		return nil, err
+	}
+	recencyScoreFloor, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Greatest, realType, zeroConst, recencyScoreRawExpr)
+	if err != nil {
+		return nil, err
+	}
+	recencyScoreExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Least, realType, oneConst, recencyScoreFloor)
+	if err != nil {
+		return nil, err
+	}
+
+	vectorWeightConst := newAgentMemoryFloatConstant(config.weights.vectorWeight)
+	recencyWeightConst := newAgentMemoryFloatConstant(config.weights.recencyWeight)
+	importanceWeightConst := newAgentMemoryFloatConstant(config.weights.importanceWeight)
+	weightedVectorExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Mul, realType, vectorWeightConst, vectorScoreExpr)
+	if err != nil {
+		return nil, err
+	}
+	weightedRecencyExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Mul, realType, recencyWeightConst, recencyScoreExpr)
+	if err != nil {
+		return nil, err
+	}
+	weightedImportanceExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Mul, realType, importanceWeightConst, importanceScoreExpr)
+	if err != nil {
+		return nil, err
+	}
+	weightedVectorRecencyExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Plus, realType, weightedVectorExpr, weightedRecencyExpr)
+	if err != nil {
+		return nil, err
+	}
+	finalScoreExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Plus, realType, weightedVectorRecencyExpr, weightedImportanceExpr)
+	if err != nil {
+		return nil, err
+	}
+
+	var estimatedTokensExpr expression.Expression
+	if config.contextAssemblyEnabled {
+		emptyPayloadConst := &expression.Constant{Value: types.NewDatum(""), RetType: types.NewFieldType(mysql.TypeVarString)}
+		payloadFilledExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Ifnull, types.NewFieldType(mysql.TypeVarString), payloadCol, emptyPayloadConst)
+		if err != nil {
+			return nil, err
+		}
+		payloadTrimmedExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Trim, types.NewFieldType(mysql.TypeVarString), payloadFilledExpr)
+		if err != nil {
+			return nil, err
+		}
+		payloadLengthExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.CharLength, realType, payloadTrimmedExpr)
+		if err != nil {
+			return nil, err
+		}
+		charBasedEstimateBaseExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Div, realType, payloadLengthExpr, fourConst)
+		if err != nil {
+			return nil, err
+		}
+		charBasedEstimateExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Ceil, realType, charBasedEstimateBaseExpr)
+		if err != nil {
+			return nil, err
+		}
+		switch config.tokenEstimatorStrategy {
+		case agentMemoryTokenEstimatorApproxCharBased:
+			estimatedTokensExpr = charBasedEstimateExpr
+		case agentMemoryTokenEstimatorProviderProfile:
+			providerMultiplierConst := newAgentMemoryFloatConstant(config.tokenEstimatorMul)
+			scaledEstimateExpr, err := expression.NewFunction(b.ctx.GetExprCtx(), ast.Mul, realType, charBasedEstimateExpr, providerMultiplierConst)
+			if err != nil {
+				return nil, err
+			}
+			estimatedTokensExpr, err = expression.NewFunction(b.ctx.GetExprCtx(), ast.Ceil, realType, scaledEstimateExpr)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			return nil, errors.Errorf("invalid token estimator strategy: %s", config.tokenEstimatorStrategy)
+		}
+	}
+
+	vectorScoreCol := &expression.Column{UniqueID: b.ctx.GetSessionVars().AllocPlanColumnID(), RetType: types.NewFieldType(mysql.TypeDouble)}
+	recencyScoreCol := &expression.Column{UniqueID: b.ctx.GetSessionVars().AllocPlanColumnID(), RetType: types.NewFieldType(mysql.TypeDouble)}
+	importanceScoreCol := &expression.Column{UniqueID: b.ctx.GetSessionVars().AllocPlanColumnID(), RetType: types.NewFieldType(mysql.TypeDouble)}
+	finalScoreCol := &expression.Column{UniqueID: b.ctx.GetSessionVars().AllocPlanColumnID(), RetType: types.NewFieldType(mysql.TypeDouble)}
+	estimatedTokensCol := &expression.Column{UniqueID: b.ctx.GetSessionVars().AllocPlanColumnID(), RetType: types.NewFieldType(mysql.TypeDouble)}
+
+	extraProjectionCols := 4
+	if config.contextAssemblyEnabled {
+		extraProjectionCols++
+	}
+	projExprs := make([]expression.Expression, 0, p.Schema().Len()+extraProjectionCols)
+	projSchemaCols := make([]*expression.Column, 0, p.Schema().Len()+extraProjectionCols)
+	for _, col := range p.Schema().Columns {
+		copiedCol := col.Clone().(*expression.Column)
+		projExprs = append(projExprs, copiedCol)
+		projSchemaCols = append(projSchemaCols, copiedCol)
+	}
+	projExprs = append(projExprs, vectorScoreExpr, recencyScoreExpr, importanceScoreExpr, finalScoreExpr)
+	projSchemaCols = append(projSchemaCols, vectorScoreCol, recencyScoreCol, importanceScoreCol, finalScoreCol)
+	if config.contextAssemblyEnabled {
+		projExprs = append(projExprs, estimatedTokensExpr)
+		projSchemaCols = append(projSchemaCols, estimatedTokensCol)
+	}
+	proj := logicalop.LogicalProjection{Exprs: projExprs}.Init(b.ctx, b.getSelectOffset())
+	proj.SetChildren(p)
+	proj.SetSchema(expression.NewSchema(projSchemaCols...))
+	projOutputNames := p.OutputNames().Shallow()
+	projOutputNames = append(projOutputNames,
+		&types.FieldName{ColName: ast.NewCIStr("__am_vector_score")},
+		&types.FieldName{ColName: ast.NewCIStr("__am_recency_score")},
+		&types.FieldName{ColName: ast.NewCIStr("__am_importance_score")},
+		&types.FieldName{ColName: ast.NewCIStr("__am_final_score")},
+	)
+	if config.contextAssemblyEnabled {
+		projOutputNames = append(projOutputNames, &types.FieldName{ColName: ast.NewCIStr("__am_estimated_tokens")})
+	}
+	proj.SetOutputNames(projOutputNames)
+
+	rankInput := base.LogicalPlan(proj)
+	if config.contextAssemblyEnabled {
+		estimableTokensExpr, err := expression.NewFunction(
+			b.ctx.GetExprCtx(),
+			ast.GT,
+			types.NewFieldType(mysql.TypeTiny),
+			estimatedTokensCol,
+			zeroConst,
+		)
+		if err != nil {
+			return nil, err
+		}
+		withinEffectiveBudgetExpr, err := expression.NewFunction(
+			b.ctx.GetExprCtx(),
+			ast.LE,
+			types.NewFieldType(mysql.TypeTiny),
+			estimatedTokensCol,
+			newAgentMemoryFloatConstant(float64(config.effectiveBudgetTokens)),
+		)
+		if err != nil {
+			return nil, err
+		}
+		budgetFilter := logicalop.LogicalSelection{Conditions: []expression.Expression{estimableTokensExpr, withinEffectiveBudgetExpr}}.Init(b.ctx, b.getSelectOffset())
+		budgetFilter.SetChildren(proj)
+		rankInput = budgetFilter
+	}
+
+	rankSort := logicalop.LogicalSort{ByItems: []*util.ByItems{
+		{Expr: finalScoreCol, Desc: true},
+		{Expr: recencyScoreCol, Desc: true},
+		{Expr: importanceScoreCol, Desc: true},
+		{Expr: vectorScoreCol, Desc: true},
+		{Expr: memoryTypeCol, Desc: false},
+		{Expr: memoryIDCol, Desc: false},
+	}}.Init(b.ctx, b.getSelectOffset())
+	rankSort.SetChildren(rankInput)
+	return rankSort, nil
+}
+
 func resolveFromSelectFields(v *ast.ColumnNameExpr, fields []*ast.SelectField, ignoreAsName bool) (index int, err error) {
 	var matchedExpr ast.ExprNode
 	index = -1
@@ -3764,6 +4198,10 @@ func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p b
 		projExprs                     []expression.Expression
 		rollup                        bool
 	)
+	agentMemoryHybridConfig, err := b.prepareAgentMemoryHybridRuntimeConfig(sel)
+	if err != nil {
+		return nil, err
+	}
 
 	// set for update read to true before building result set node
 	if isForUpdateReadSelectLock(sel.LockInfo) {
@@ -3972,6 +4410,9 @@ func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p b
 	var oldLen int
 	// According to https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html,
 	// we can only process window functions after having clause, so `considerWindow` is false now.
+	if agentMemoryHybridConfig.enabled {
+		appendAgentMemoryHybridAuxiliaryFields(sel, agentMemoryHybridConfig.contextAssemblyEnabled)
+	}
 	p, projExprs, oldLen, err = b.buildProjection(ctx, p, sel.Fields.Fields, totalMap, nil, false, sel.OrderBy != nil)
 	if err != nil {
 		return nil, err
@@ -4046,7 +4487,19 @@ func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p b
 	}
 
 	if sel.Limit != nil {
-		p, err = b.buildLimit(p, sel.Limit)
+		if agentMemoryHybridConfig.enabled {
+			p, err = b.buildLimit(p, buildAgentMemoryLimitNode(agentMemoryHybridConfig.candidateN))
+			if err != nil {
+				return nil, err
+			}
+			p, err = b.buildAgentMemoryHybridRerank(ctx, p, agentMemoryHybridConfig)
+			if err != nil {
+				return nil, err
+			}
+			p, err = b.buildLimit(p, buildAgentMemoryLimitNode(agentMemoryHybridConfig.outputK))
+		} else {
+			p, err = b.buildLimit(p, sel.Limit)
+		}
 		if err != nil {
 			return nil, err
 		}
