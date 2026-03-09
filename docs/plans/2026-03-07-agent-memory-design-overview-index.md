@@ -187,6 +187,12 @@ The following docs execute the roadmap path above as milestone-level detailed de
 
 - Executable issue backlog (epics + sub-issues + acceptance criteria):
   - `docs/plans/2026-03-07-agent-memory-milestone-issue-backlog.md`
+- Milestone A-5 validation evidence (upgrade/rollback/compatibility rehearsal):
+  - `docs/plans/2026-03-08-agent-memory-milestone-a5-validation-evidence.md`
+- Milestone B-5 rollout and rollback evidence:
+  - `docs/plans/2026-03-08-agent-memory-milestone-b5-rollout-rollback-evidence.md`
+- Milestone C-5 canary and rollback drill evidence:
+  - `docs/plans/2026-03-08-agent-memory-milestone-c5-canary-rollback-evidence.md`
 
 ## User Spec Package
 
@@ -263,4 +269,7 @@ Use this index as a living tracker by appending:
 - `docs/plans/2026-03-07-agent-memory-milestone-b-detailed-design.md`
 - `docs/plans/2026-03-07-agent-memory-milestone-c-detailed-design.md`
 - `docs/plans/2026-03-07-agent-memory-milestone-issue-backlog.md`
+- `docs/plans/2026-03-08-agent-memory-milestone-a5-validation-evidence.md`
+- `docs/plans/2026-03-08-agent-memory-milestone-b5-rollout-rollback-evidence.md`
+- `docs/plans/2026-03-08-agent-memory-milestone-c5-canary-rollback-evidence.md`
 - `docs/plans/2026-03-07-agent-memory-user-spec-claude-opencode-openclaw.md`

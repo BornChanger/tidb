@@ -97,9 +97,9 @@ Deliver Milestone A foundation baseline for agent-memory: schema profile v1, fai
 - Baseline memory audit trail
 
 ## Success Criteria
-- [ ] Milestone A entry/exit criteria in `docs/plans/2026-03-07-agent-memory-milestone-a-detailed-design.md` are fully met
-- [ ] Sub-issues A-1..A-5 merged with validation evidence
-- [ ] Milestone A acceptance gate is green
+- [x] Milestone A entry/exit criteria in `docs/plans/2026-03-07-agent-memory-milestone-a-detailed-design.md` are fully met
+- [x] Sub-issues A-1..A-5 merged with validation evidence
+- [x] Milestone A acceptance gate is green
 
 ## References
 - docs/plans/2026-03-07-agent-memory-milestone-a-detailed-design.md
@@ -124,13 +124,13 @@ Implement profile v1 bootstrap objects and profile version registry for standard
 - Ensure bootstrap is idempotent and rollback-aware
 
 ## Acceptance Criteria
-- [ ] Bootstrap can be applied repeatedly without drift
-- [ ] Profile version metadata is persisted and queryable
-- [ ] Schema objects match Milestone A contract
+- [x] Bootstrap can be applied repeatedly without drift
+- [x] Profile version metadata is persisted and queryable
+- [x] Schema objects match Milestone A contract
 
 ## Validation
-- [ ] Add targeted tests for bootstrap idempotency and metadata persistence
-- [ ] Document upgrade/downgrade behavior
+- [x] Add targeted tests for bootstrap idempotency and metadata persistence
+- [x] Document upgrade/downgrade behavior
 ```
 
 ### A-2
@@ -149,13 +149,13 @@ Add compatibility views that stabilize memory read surfaces across schema evolut
 - Document view column contracts and compatibility rules
 
 ## Acceptance Criteria
-- [ ] View outputs match design contracts
-- [ ] Existing client queries can be mapped to views without breaking semantics
-- [ ] View behavior is covered by tests
+- [x] View outputs match design contracts
+- [x] Existing client queries can be mapped to views without breaking semantics
+- [x] View behavior is covered by tests
 
 ## Validation
-- [ ] Add tests for multi-type union and archived filtering
-- [ ] Add migration compatibility test notes
+- [x] Add tests for multi-type union and archived filtering
+- [x] Add migration compatibility test notes
 ```
 
 ### A-3
@@ -175,13 +175,13 @@ Enforce tenant/namespace context as mandatory for memory operators with explicit
 - Return explicit errors for missing/invalid context
 
 ## Acceptance Criteria
-- [ ] Missing tenant context always fails closed
-- [ ] Planner/executor path cannot bypass tenant predicates
-- [ ] Behavior is consistent across retrieval and assembly entrypoints
+- [x] Missing tenant context always fails closed
+- [x] Planner/executor path cannot bypass tenant predicates
+- [x] Behavior is consistent across retrieval and assembly entrypoints
 
 ## Validation
-- [ ] Add functional tests for allow/deny paths
-- [ ] Add concurrent-session checks for context isolation
+- [x] Add functional tests for allow/deny paths
+- [x] Add concurrent-session checks for context isolation
 ```
 
 ### A-4
@@ -201,13 +201,13 @@ Implement baseline audit schema and event emission for memory operation decision
 - Define retention defaults
 
 ## Acceptance Criteria
-- [ ] Success and deny events are both audited
-- [ ] No sensitive payload is stored in default audit rows
-- [ ] Retention and access guidance documented
+- [x] Success and deny events are both audited
+- [x] No sensitive payload is stored in default audit rows
+- [x] Retention and access guidance documented
 
 ## Validation
-- [ ] Add tests for event emission on all baseline operation classes
-- [ ] Verify storage/cardinality constraints under load
+- [x] Add tests for event emission on all baseline operation classes
+- [x] Verify storage/cardinality constraints under load
 ```
 
 ### A-5
@@ -227,13 +227,13 @@ Produce evidence that Milestone A can be safely upgraded, rolled back, and backe
 - Backup/restore consistency for profile and audit metadata
 
 ## Acceptance Criteria
-- [ ] Upgrade and rollback rehearsals are documented and reproducible
-- [ ] Backup/restore consistency checks pass
-- [ ] Milestone A acceptance gate can be marked complete
+- [x] Upgrade and rollback rehearsals are documented and reproducible
+- [x] Backup/restore consistency checks pass
+- [x] Milestone A acceptance gate can be marked complete
 
 ## Validation
-- [ ] Add compatibility test evidence links
-- [ ] Record exact commands used for rehearsal
+- [x] Add compatibility test evidence links
+- [x] Record exact commands used for rehearsal
 ```
 
 ## Milestone B (Core Retrieval Path)
@@ -255,9 +255,9 @@ Deliver Milestone B core retrieval path: hybrid retrieval, context assembly, and
 - Lifecycle scheduler core and transition controls
 
 ## Success Criteria
-- [ ] Sub-issues B-1..B-5 merged with evidence
-- [ ] End-to-end retrieval->assembly path passes deterministic checks
-- [ ] Milestone B acceptance gate is green
+- [x] Sub-issues B-1..B-5 merged with evidence
+- [x] End-to-end retrieval->assembly path passes deterministic checks
+- [x] Milestone B acceptance gate is green
 
 ## References
 - docs/plans/2026-03-07-agent-memory-milestone-b-detailed-design.md
@@ -280,13 +280,13 @@ Implement hybrid retrieval operator with deterministic score fusion and bounded 
 - Weighted fusion (`vector/recency/importance`) and top-k output
 
 ## Acceptance Criteria
-- [ ] Fixed input and weights always yield deterministic ordering
-- [ ] Candidate pool is bounded by guardrails
-- [ ] Missing index path produces explicit fallback warning behavior
+- [x] Fixed input and weights always yield deterministic ordering
+- [x] Candidate pool is bounded by guardrails
+- [x] Missing index path produces explicit fallback warning behavior
 
 ## Validation
-- [ ] Add deterministic ranking tests
-- [ ] Add fallback-path tests and limit guard tests
+- [x] Add deterministic ranking tests
+- [x] Add fallback-path tests and limit guard tests
 ```
 
 ### B-2
@@ -306,13 +306,13 @@ Implement context assembly with deterministic packing, section quotas, and manif
 - Final assembled context + manifest emission
 
 ## Acceptance Criteria
-- [ ] Effective budget is never exceeded in successful paths
-- [ ] Output manifest explains inclusion/exclusion decisions
-- [ ] Invalid policy/budget paths return explicit errors
+- [x] Effective budget is never exceeded in successful paths
+- [x] Output manifest explains inclusion/exclusion decisions
+- [x] Invalid policy/budget paths return explicit errors
 
 ## Validation
-- [ ] Add budget and section policy tests
-- [ ] Add deterministic packing tests for fixed candidates
+- [x] Add budget and section policy tests
+- [x] Add deterministic packing tests for fixed candidates
 ```
 
 ### B-3
@@ -332,13 +332,13 @@ Implement lifecycle scheduler core with transition execution and admin controls.
 - Pause/resume/cancel controls and checkpointed recovery
 
 ## Acceptance Criteria
-- [ ] Lifecycle tasks are idempotent across retries
-- [ ] Archived state is respected by default retrieval filters
-- [ ] Control commands are safe under concurrent operations
+- [x] Lifecycle tasks are idempotent across retries
+- [x] Archived state is respected by default retrieval filters
+- [x] Control commands are safe under concurrent operations
 
 ## Validation
-- [ ] Add transition correctness tests
-- [ ] Add failover/recovery tests for checkpoint continuity
+- [x] Add transition correctness tests
+- [x] Add failover/recovery tests for checkpoint continuity
 ```
 
 ### B-4
@@ -358,13 +358,13 @@ Validate integrated behavior across retrieval, assembly, and lifecycle state tra
 - Cross-track contract integrity with Milestone A foundations
 
 ## Acceptance Criteria
-- [ ] E2E deterministic scenarios pass
-- [ ] Lifecycle transitions correctly influence retrieval candidates
-- [ ] No contract regression against A-level compatibility views
+- [x] E2E deterministic scenarios pass
+- [x] Lifecycle transitions correctly influence retrieval candidates
+- [x] No contract regression against A-level compatibility views
 
 ## Validation
-- [ ] Add integration test suite with representative workloads
-- [ ] Provide benchmark snapshot vs target budgets
+- [x] Add integration test suite with representative workloads
+- [x] Provide benchmark snapshot vs target budgets
 ```
 
 ### B-5
@@ -384,13 +384,13 @@ Finalize dark-launch, shadow, limited rollout, and rollback rehearsals for Miles
 - Operational runbook updates
 
 ## Acceptance Criteria
-- [ ] Rollout stages and rollback steps are tested and documented
-- [ ] Independent disable paths work without schema rollback
-- [ ] Milestone B safety gate can be marked complete
+- [x] Rollout stages and rollback steps are tested and documented
+- [x] Independent disable paths work without schema rollback
+- [x] Milestone B safety gate can be marked complete
 
 ## Validation
-- [ ] Record rollback rehearsal commands and results
-- [ ] Attach SLO watch results from limited rollout stage
+- [x] Record rollback rehearsal commands and results
+- [x] Attach SLO watch results from limited rollout stage
 ```
 
 ## Milestone C (Production Hardening)
@@ -412,9 +412,9 @@ Deliver Milestone C production hardening: observability/explainability, ecosyste
 - Security hardening extensions and operational drills
 
 ## Success Criteria
-- [ ] Sub-issues C-1..C-5 merged with evidence
-- [ ] Production gate checks pass
-- [ ] Milestone C acceptance gate is green
+- [x] Sub-issues C-1..C-5 merged with evidence
+- [x] Production gate checks pass
+- [x] Milestone C acceptance gate is green
 
 ## References
 - docs/plans/2026-03-07-agent-memory-milestone-c-detailed-design.md
@@ -437,13 +437,13 @@ Implement trace and metrics foundations for retrieval and assembly paths with sa
 - Sampling/cardinality guardrails
 
 ## Acceptance Criteria
-- [ ] Metrics and traces are emitted correctly in normal and error paths
-- [ ] Sampling and retention controls cap overhead
-- [ ] Default outputs avoid sensitive payload capture
+- [x] Metrics and traces are emitted correctly in normal and error paths
+- [x] Sampling and retention controls cap overhead
+- [x] Default outputs avoid sensitive payload capture
 
 ## Validation
-- [ ] Add functional and performance overhead tests
-- [ ] Add trace-volume stress checks
+- [x] Add functional and performance overhead tests
+- [x] Add trace-volume stress checks
 ```
 
 ### C-2
@@ -463,13 +463,13 @@ Expose explain and trace query surfaces for operator-level and run-level diagnos
 - Slow-log/statement summary extensions for memory paths
 
 ## Acceptance Criteria
-- [ ] Explain output matches actual execution stages
-- [ ] Trace query output is stable and actionable
-- [ ] Diagnostic fields are integrated with SQL observability surfaces
+- [x] Explain output matches actual execution stages
+- [x] Trace query output is stable and actionable
+- [x] Diagnostic fields are integrated with SQL observability surfaces
 
 ## Validation
-- [ ] Add explain-vs-execution consistency tests
-- [ ] Add diagnostics correctness tests for error paths
+- [x] Add explain-vs-execution consistency tests
+- [x] Add diagnostics correctness tests for error paths
 ```
 
 ### C-3
@@ -489,13 +489,13 @@ Define and validate ecosystem adapter operation contracts (mem0/LangGraph/MCP pr
 - Conformance suite and compatibility matrix
 
 ## Acceptance Criteria
-- [ ] At least one adapter profile passes end-to-end conformance
-- [ ] Version negotiation behavior is documented and tested
-- [ ] SQL contract remains source of truth for behavior
+- [x] At least one adapter profile passes end-to-end conformance
+- [x] Version negotiation behavior is documented and tested
+- [x] SQL contract remains source of truth for behavior
 
 ## Validation
-- [ ] Add conformance tests for idempotency and retry behavior
-- [ ] Add compatibility tests for older profile versions
+- [x] Add conformance tests for idempotency and retry behavior
+- [x] Add compatibility tests for older profile versions
 ```
 
 ### C-4
@@ -515,13 +515,13 @@ Implement security hardening extensions: classification-aware redaction, privile
 - Purge workflow with artifact cleanup checkpoints
 
 ## Acceptance Criteria
-- [ ] Redaction behavior is role- and classification-correct
-- [ ] Purge workflow is auditable and safe under concurrent access
-- [ ] No cross-tenant leakage in SQL or adapter path
+- [x] Redaction behavior is role- and classification-correct
+- [x] Purge workflow is auditable and safe under concurrent access
+- [x] No cross-tenant leakage in SQL or adapter path
 
 ## Validation
-- [ ] Add security scenario tests and concurrency checks
-- [ ] Add telemetry safety tests for payload capture policies
+- [x] Add security scenario tests and concurrency checks
+- [x] Add telemetry safety tests for payload capture policies
 ```
 
 ### C-5
@@ -541,13 +541,13 @@ Execute production-readiness drills (canary + rollback) and capture evidence for
 - Incident and runbook validation
 
 ## Acceptance Criteria
-- [ ] Canary and pilot SLO criteria are met
-- [ ] Rollback drills complete without unresolved red risks
-- [ ] Milestone C production gate is marked complete
+- [x] Canary and pilot SLO criteria are met
+- [x] Rollback drills complete without unresolved red risks
+- [x] Milestone C production gate is marked complete
 
 ## Validation
-- [ ] Attach canary metrics and trace evidence
-- [ ] Attach rollback drill logs and runbook revisions
+- [x] Attach canary metrics and trace evidence
+- [x] Attach rollback drill logs and runbook revisions
 ```
 
 ## Suggested Parent/Epic Creation Order
