@@ -4,6 +4,9 @@ go_library(
     name = "session",
     srcs = [
         "advisory_locks.go",
+        "agent_memory_adapter_contract.go",
+        "agent_memory_lifecycle_scheduler.go",
+        "agent_memory_security_hardening.go",
         "bootstrap.go",
         "contextimpl.go",
         "mock_bootstrap.go",
@@ -155,6 +158,9 @@ go_test(
     name = "session_test",
     timeout = "moderate",
     srcs = [
+        "agent_memory_adapter_contract_test.go",
+        "agent_memory_lifecycle_scheduler_test.go",
+        "agent_memory_security_hardening_test.go",
         "bench_test.go",
         "bootstrap_test.go",
         "main_test.go",
@@ -165,7 +171,7 @@ go_test(
     embed = [":session"],
     flaky = True,
     race = "off",
-    shard_count = 47,
+    shard_count = 50,
     deps = [
         "//pkg/autoid_service",
         "//pkg/bindinfo",
