@@ -122,7 +122,13 @@ const (
 	// The variable name in mysql.tidb table and it records the current DDLTableVersion
 	tidbDDLTableVersion = "ddl_table_version"
 	// The variable name in mysql.tidb table and it records the cluster id of this cluster
-	tidbClusterID = "cluster_id"
+	tidbClusterID                      = "cluster_id"
+	agentMemoryProfileVersionTableName = "tidb_agent_memory_profile_version"
+	agentMemoryProfileDefaultTenantID  = "default"
+	agentMemoryProfileDefaultNamespace = "default"
+	agentMemoryProfileV1Name           = "agent_memory_profile_v1"
+	agentMemoryProfileV1Version        = int64(1)
+	agentMemoryProfileV1ETag           = "v1"
 )
 
 // DDL owner key's expired time is ManagerSessionTTL seconds, we should wait the time and give more time to have a chance to finish it.
@@ -245,6 +251,27 @@ func writeOOMAction(s sessionapi.Session) {
 	)
 }
 
+func initAgentMemoryProfileVersion(s sessionapi.Session) {
+	mustExecute(s, `INSERT HIGH_PRIORITY INTO %n.%n (
+		tenant_id,
+		namespace,
+		profile_name,
+		profile_version,
+		etag
+	) VALUES (%?, %?, %?, %?, %?)
+	ON DUPLICATE KEY UPDATE
+		profile_version = VALUES(profile_version),
+		etag = VALUES(etag)`,
+		mysql.SystemDB,
+		agentMemoryProfileVersionTableName,
+		agentMemoryProfileDefaultTenantID,
+		agentMemoryProfileDefaultNamespace,
+		agentMemoryProfileV1Name,
+		agentMemoryProfileV1Version,
+		agentMemoryProfileV1ETag,
+	)
+}
+
 // updateBootstrapVer updates bootstrap version variable in mysql.TiDB table.
 func updateBootstrapVer(s sessionapi.Session) {
 	// Update bootstrap version.
@@ -329,6 +356,11 @@ var (
 		{ID: metadef.IndexAdvisorResultsTableID, Name: "index_advisor_results", SQL: metadef.CreateIndexAdvisorResultsTable},
 		{ID: metadef.TiDBKernelOptionsTableID, Name: "tidb_kernel_options", SQL: metadef.CreateTiDBKernelOptionsTable},
 		{ID: metadef.TiDBWorkloadValuesTableID, Name: "tidb_workload_values", SQL: metadef.CreateTiDBWorkloadValuesTable},
+		{ID: metadef.TiDBAgentMemoryProfileVersionTableID, Name: "tidb_agent_memory_profile_version", SQL: metadef.CreateTiDBAgentMemoryProfileVersionTable},
+		{ID: metadef.TiDBAgentMemoryEpisodicTableID, Name: "tidb_agent_memory_episodic", SQL: metadef.CreateTiDBAgentMemoryEpisodicTable},
+		{ID: metadef.TiDBAgentMemorySemanticTableID, Name: "tidb_agent_memory_semantic", SQL: metadef.CreateTiDBAgentMemorySemanticTable},
+		{ID: metadef.TiDBAgentMemoryProceduralTableID, Name: "tidb_agent_memory_procedural", SQL: metadef.CreateTiDBAgentMemoryProceduralTable},
+		{ID: metadef.TiDBAgentMemoryAuditTableID, Name: "tidb_agent_memory_audit", SQL: metadef.CreateTiDBAgentMemoryAuditTable},
 	}
 )
 
@@ -405,6 +437,9 @@ func doDDLWorks(s sessionapi.Session) {
 	mustExecute(s, metadef.CreateTiDBMDLView)
 	// create `sys.schema_unused_indexes` view
 	mustExecute(s, metadef.CreateSchemaUnusedIndexesView)
+	mustExecute(s, metadef.CreateTiDBAgentMemoryAllView)
+	mustExecute(s, metadef.CreateTiDBAgentMemoryActiveView)
+	mustExecute(s, metadef.CreateTiDBAgentMemoryForRetrievalView)
 	// Create a test database.
 	mustExecute(s, "CREATE DATABASE IF NOT EXISTS test")
 }
@@ -519,6 +554,8 @@ func doDMLWorks(s sessionapi.Session) {
 	writeDDLTableVersion(s)
 
 	writeClusterID(s)
+
+	initAgentMemoryProfileVersion(s)
 
 	ctx := kv.WithInternalSourceType(context.Background(), kv.InternalTxnBootstrap)
 	_, err := s.ExecuteInternal(ctx, "COMMIT")

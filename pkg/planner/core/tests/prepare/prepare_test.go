@@ -233,6 +233,25 @@ func TestPrepareCache(t *testing.T) {
 	tk.MustExec(`DROP USER 'u_tp'@'localhost';`)
 }
 
+func TestAgentMemoryPrepareExecuteFailClosed(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec(`set tidb_enable_prepared_plan_cache=1`)
+	tk.MustExec(`set @@tidb_agent_tenant_id='tenant_prepare'`)
+	tk.MustExec(`set @@tidb_agent_namespace='ns_prepare'`)
+	tk.MustExec(`prepare agent_mem_stmt from 'select tenant_id from mysql.tidb_agent_memory_episodic where memory_id = ?'`)
+	tk.MustExec(`set @id=1`)
+	tk.MustExec(`execute agent_mem_stmt using @id`)
+
+	tk.MustExec(`set @@tidb_agent_tenant_id=''`)
+	tk.MustGetErrCode(`execute agent_mem_stmt using @id`, errno.ErrSpecificAccessDenied)
+
+	tk.MustExec(`set @@tidb_agent_tenant_id='tenant_prepare'`)
+	tk.MustExec(`set @@tidb_agent_namespace='ns_prepare'`)
+	tk.MustExec(`execute agent_mem_stmt using @id`)
+}
+
 // dtype: tinyint, unsigned, float, decimal, year
 // rtype: null, valid, out-of-range, invalid, str, exists
 func randValue(tk *testkit.TestKit, tbl, col, dtype, rtype string) string {

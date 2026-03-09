@@ -16,8 +16,10 @@ package variable
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -674,6 +676,267 @@ func TestSessionStatesSystemVar(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1024", val)
 	require.Equal(t, true, keep)
+}
+
+func TestAgentMemoryContextSysVars(t *testing.T) {
+	v := NewSessionVars(nil)
+	v.GlobalVarsAccessor = NewMockGlobalAccessor4Tests()
+
+	val, err := v.GetSessionOrGlobalSystemVar(context.Background(), "tidb_agent_tenant_id")
+	require.NoError(t, err)
+	require.Equal(t, "", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), "tidb_agent_namespace")
+	require.NoError(t, err)
+	require.Equal(t, "", val)
+
+	err = v.SetSystemVar("tidb_agent_tenant_id", "tenant-a")
+	require.NoError(t, err)
+	err = v.SetSystemVar("tidb_agent_namespace", "workspace/default")
+	require.NoError(t, err)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), "tidb_agent_tenant_id")
+	require.NoError(t, err)
+	require.Equal(t, "tenant-a", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), "tidb_agent_namespace")
+	require.NoError(t, err)
+	require.Equal(t, "workspace/default", val)
+}
+
+func TestAgentMemoryContextSysVarsConcurrentIsolation(t *testing.T) {
+	type sessionContext struct {
+		tenantID  string
+		namespace string
+	}
+
+	sessions := []sessionContext{
+		{tenantID: "tenant-a", namespace: "workspace/default-a"},
+		{tenantID: "tenant-b", namespace: "workspace/default-b"},
+	}
+
+	start := make(chan struct{})
+	errCh := make(chan error, len(sessions))
+	var wg sync.WaitGroup
+
+	for _, session := range sessions {
+		session := session
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			v := NewSessionVars(nil)
+			v.GlobalVarsAccessor = NewMockGlobalAccessor4Tests()
+			ctx := context.Background()
+
+			<-start
+			for i := 0; i < 64; i++ {
+				if err := v.SetSystemVar("tidb_agent_tenant_id", session.tenantID); err != nil {
+					errCh <- err
+					return
+				}
+				if err := v.SetSystemVar("tidb_agent_namespace", session.namespace); err != nil {
+					errCh <- err
+					return
+				}
+
+				tenantID, err := v.GetSessionOrGlobalSystemVar(ctx, "tidb_agent_tenant_id")
+				if err != nil {
+					errCh <- err
+					return
+				}
+				namespace, err := v.GetSessionOrGlobalSystemVar(ctx, "tidb_agent_namespace")
+				if err != nil {
+					errCh <- err
+					return
+				}
+				if tenantID != session.tenantID {
+					errCh <- fmt.Errorf("tenant leaked across sessions: got %q, want %q", tenantID, session.tenantID)
+					return
+				}
+				if namespace != session.namespace {
+					errCh <- fmt.Errorf("namespace leaked across sessions: got %q, want %q", namespace, session.namespace)
+					return
+				}
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+}
+
+func TestAgentMemoryHybridRetrievalSysVars(t *testing.T) {
+	v := NewSessionVars(nil)
+	v.GlobalVarsAccessor = NewMockGlobalAccessor4Tests()
+
+	val, err := v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBEnableAgentMemoryHybridRetrieval)
+	require.NoError(t, err)
+	require.Equal(t, "OFF", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryRetrieveCandidateN)
+	require.NoError(t, err)
+	require.Equal(t, "200", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryRetrieveLimitK)
+	require.NoError(t, err)
+	require.Equal(t, "20", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy)
+	require.NoError(t, err)
+	require.Equal(t, "approx_char_based", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier)
+	require.NoError(t, err)
+	require.Equal(t, "1", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens)
+	require.NoError(t, err)
+	require.Equal(t, strconv.Itoa(vardef.DefTiDBAgentMemoryContextAssemblyTotalBudgetTokens), val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens)
+	require.NoError(t, err)
+	require.Equal(t, strconv.Itoa(vardef.DefTiDBAgentMemoryContextAssemblyReservedOutputTokens), val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio)
+	require.NoError(t, err)
+	require.Equal(t, strconv.FormatFloat(vardef.DefTiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio, 'f', -1, 64), val)
+
+	err = v.SetSystemVar(vardef.TiDBEnableAgentMemoryHybridRetrieval, "ON")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBEnableAgentMemoryContextAssembly, "ON")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBEnableAgentMemoryLifecycleScheduler, "ON")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveLimitK, "50")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveCandidateN, "40")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveCandidateN, "400")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveCandidateN, "10001")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveRecencyHalfLifeSeconds, "3600")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveWeightVector, "1.2")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveWeightVector, "0.6")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveWeightVector, "0.55")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveWeightRecency, "0.3")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveWeightRecency, "0.25")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveWeightImportance, "0.15")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveWeightImportance, "0.20")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryRetrieveWeightRecency, "0.5")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy, "provider_profile")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy, "invalid_strategy")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tidb_agent_memory_context_assembly_token_estimator_strategy")
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy, "approx_char_based")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier, "1.25")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier, "0")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tidb_agent_memory_context_assembly_token_estimator_provider_multiplier")
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier, "-1")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier, "nan")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier, "inf")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens, "1000")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens, "200")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens, "0")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tidb_agent_memory_context_assembly_total_budget_tokens")
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens, "-1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tidb_agent_memory_context_assembly_reserved_output_tokens")
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens, "1000")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tidb_agent_memory_context_assembly_reserved_output_tokens")
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens, "200")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tidb_agent_memory_context_assembly_reserved_output_tokens")
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio, "0.15")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio, "1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tidb_agent_memory_context_assembly_budget_safety_margin_ratio")
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio, "-0.1")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio, "nan")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryTraceEnable, "ON")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryTraceSampleRatio, "0.5")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryTraceSampleRatio, "1.1")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryTraceSampleRatio, "-0.1")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryTraceMaxItems, "0")
+	require.Error(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryTraceMaxItems, "128")
+	require.NoError(t, err)
+	err = v.SetSystemVar(vardef.TiDBAgentMemoryTraceCapturePayload, "ON")
+	require.NoError(t, err)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBEnableAgentMemoryContextAssembly)
+	require.NoError(t, err)
+	require.Equal(t, "ON", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryRetrieveCandidateN)
+	require.NoError(t, err)
+	require.Equal(t, "400", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryRetrieveLimitK)
+	require.NoError(t, err)
+	require.Equal(t, "50", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryRetrieveWeightVector)
+	require.NoError(t, err)
+	require.Equal(t, "0.55", val)
+
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryTraceEnable)
+	require.NoError(t, err)
+	require.Equal(t, "ON", val)
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy)
+	require.NoError(t, err)
+	require.Equal(t, "approx_char_based", val)
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier)
+	require.NoError(t, err)
+	require.Equal(t, "1.25", val)
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens)
+	require.NoError(t, err)
+	require.Equal(t, "1000", val)
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens)
+	require.NoError(t, err)
+	require.Equal(t, "200", val)
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio)
+	require.NoError(t, err)
+	require.Equal(t, "0.15", val)
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryTraceSampleRatio)
+	require.NoError(t, err)
+	require.Equal(t, "0.5", val)
+	val, err = v.GetSessionOrGlobalSystemVar(context.Background(), vardef.TiDBAgentMemoryTraceMaxItems)
+	require.NoError(t, err)
+	require.Equal(t, "128", val)
 }
 
 func TestOnOffHelpers(t *testing.T) {

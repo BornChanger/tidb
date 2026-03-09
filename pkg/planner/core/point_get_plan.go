@@ -103,6 +103,9 @@ func TryFastPlan(ctx base.PlanContext, node *resolve.NodeW) (p base.Plan) {
 		// Try to convert the `SELECT a, b, c FROM t WHERE (a, b, c) in ((1, 2, 4), (1, 3, 5))` to
 		// `PhysicalUnionAll` which children are `PointGet` if exists an unique key (a, b, c) in table `t`
 		if fp := tryWhereIn2BatchPointGet(ctx, x, node.GetResolveContext()); fp != nil {
+			if isAgentMemoryProtectedTable(fp.DBName, fp.TblInfo.Name.L) {
+				return nil
+			}
 			if checkFastPlanPrivilege(ctx, fp.DBName, fp.TblInfo.Name.L, mysql.SelectPriv) != nil {
 				return
 			}
@@ -114,6 +117,9 @@ func TryFastPlan(ctx base.PlanContext, node *resolve.NodeW) (p base.Plan) {
 			return
 		}
 		if fp := tryPointGetPlan(ctx, x, node.GetResolveContext(), isForUpdateReadSelectLock(x.LockInfo)); fp != nil {
+			if isAgentMemoryProtectedTable(fp.DBName, fp.TblInfo.Name.L) {
+				return nil
+			}
 			if checkFastPlanPrivilege(ctx, fp.DBName, fp.TblInfo.Name.L, mysql.SelectPriv) != nil {
 				return nil
 			}
@@ -1177,6 +1183,9 @@ func tryUpdatePointPlan(ctx base.PlanContext, updateStmt *ast.UpdateStmt, resolv
 	}
 	pointGet := tryPointGetPlan(ctx, selStmt, resolveCtx, true)
 	if pointGet != nil {
+		if isAgentMemoryProtectedTable(pointGet.DBName, pointGet.TblInfo.Name.L) {
+			return nil
+		}
 		if pointGet.IsTableDual {
 			dual := physicalop.PhysicalTableDual{}.Init(ctx, &property.StatsInfo{}, 0)
 			dual.SetOutputNames(pointGet.OutputNames())
@@ -1189,6 +1198,9 @@ func tryUpdatePointPlan(ctx base.PlanContext, updateStmt *ast.UpdateStmt, resolv
 	}
 	batchPointGet := tryWhereIn2BatchPointGet(ctx, selStmt, resolveCtx)
 	if batchPointGet != nil {
+		if isAgentMemoryProtectedTable(batchPointGet.DBName, batchPointGet.TblInfo.Name.L) {
+			return nil
+		}
 		if ctx.GetSessionVars().TxnCtx.IsPessimistic {
 			batchPointGet.Lock, batchPointGet.LockWaitTime = getLockWaitTime(ctx, &ast.SelectLockInfo{LockType: ast.SelectLockForUpdate})
 		}
@@ -1308,6 +1320,9 @@ func tryDeletePointPlan(ctx base.PlanContext, delStmt *ast.DeleteStmt, resolveCt
 		Limit:      delStmt.Limit,
 	}
 	if pointGet := tryPointGetPlan(ctx, selStmt, resolveCtx, true); pointGet != nil {
+		if isAgentMemoryProtectedTable(pointGet.DBName, pointGet.TblInfo.Name.L) {
+			return nil
+		}
 		if pointGet.IsTableDual {
 			dual := physicalop.PhysicalTableDual{}.Init(ctx, &property.StatsInfo{}, 0)
 			dual.SetOutputNames(pointGet.OutputNames())
@@ -1319,6 +1334,9 @@ func tryDeletePointPlan(ctx base.PlanContext, delStmt *ast.DeleteStmt, resolveCt
 		return buildPointDeletePlan(ctx, pointGet, pointGet.DBName, pointGet.TblInfo, delStmt.IgnoreErr)
 	}
 	if batchPointGet := tryWhereIn2BatchPointGet(ctx, selStmt, resolveCtx); batchPointGet != nil {
+		if isAgentMemoryProtectedTable(batchPointGet.DBName, batchPointGet.TblInfo.Name.L) {
+			return nil
+		}
 		if ctx.GetSessionVars().TxnCtx.IsPessimistic {
 			batchPointGet.Lock, batchPointGet.LockWaitTime = getLockWaitTime(ctx, &ast.SelectLockInfo{LockType: ast.SelectLockForUpdate})
 		}

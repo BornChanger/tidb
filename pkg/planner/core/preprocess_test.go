@@ -16,6 +16,7 @@ package core_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -484,4 +485,290 @@ func TestPreprocessDeleteFromWithAlias(t *testing.T) {
 	tk.MustExec(" create table t2(id int);")
 	tk.MustExec("delete tt1 from t1 tt1,(select max(id) id from t2)tt2 where tt1.id<=tt2.id;")
 	tk.MustExec("create global binding for delete tt1 from t1 tt1,(select max(id) id from t2)tt2 where tt1.id<=tt2.id using delete /*+ MAX_EXECUTION_TIME(10)*/ tt1 from t1 tt1,(select max(id) id from t2)tt2 where tt1.id<=tt2.id;")
+}
+
+func TestAgentMemoryTenantContextFailClosed(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+
+	tk.MustGetErrCode("select count(*) from mysql.agent_memory_all", mysql.ErrSpecificAccessDenied)
+	tk.MustGetErrCode("select count(*) from mysql.tidb_agent_memory_profile_version", mysql.ErrSpecificAccessDenied)
+	tk.MustGetErrCode("select count(*) from mysql.tidb_agent_memory_episodic", mysql.ErrSpecificAccessDenied)
+	tk.MustGetErrCode("select count(*) from mysql.tidb_agent_memory_audit", mysql.ErrSpecificAccessDenied)
+
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("select count(*) from mysql.agent_memory_all")
+	tk.MustExec("select count(*) from mysql.tidb_agent_memory_profile_version")
+	tk.MustExec("select count(*) from mysql.tidb_agent_memory_episodic")
+	tk.MustExec("select count(*) from mysql.tidb_agent_memory_audit")
+}
+
+func TestAgentMemoryAuditStorageCardinalityUnderLoad(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+
+	const iterations = 24
+	tk.MustExec("set @audit_before := (select count(*) from mysql.tidb_agent_memory_audit where tenant_id='tenant_test' and namespace='ns_test')")
+
+	for i := 0; i < iterations; i++ {
+		subjectID := fmt.Sprintf("load_cardinality_%02d", i)
+		tk.MustExec(fmt.Sprintf(`insert into mysql.tidb_agent_memory_episodic
+			(tenant_id, namespace, subject_id, payload, embedding, importance, confidence, state, created_at)
+			values ('tenant_test', 'ns_test', '%s', json_object('subject_id', '%s'), vec_from_text('[0,0,0]'), 0, 0, 'hot', now(6))`, subjectID, subjectID))
+		tk.MustExec(fmt.Sprintf("select count(*) from mysql.tidb_agent_memory_episodic where tenant_id='tenant_test' and namespace='ns_test' and subject_id='%s'", subjectID))
+		tk.MustExec(fmt.Sprintf("delete from mysql.tidb_agent_memory_episodic where tenant_id='tenant_test' and namespace='ns_test' and subject_id='%s'", subjectID))
+	}
+
+	tk.MustQuery(fmt.Sprintf("select if((select count(*) from mysql.tidb_agent_memory_audit where tenant_id='tenant_test' and namespace='ns_test') >= @audit_before + %d, 1, 0)", iterations*3)).Check(testkit.Rows("1"))
+	tk.MustQuery("select if((select count(distinct action) from mysql.tidb_agent_memory_audit where tenant_id='tenant_test' and namespace='ns_test') <= 3, 1, 0)").Check(testkit.Rows("1"))
+	tk.MustQuery("select if((select count(distinct object_type) from mysql.tidb_agent_memory_audit where tenant_id='tenant_test' and namespace='ns_test') <= 1, 1, 0)").Check(testkit.Rows("1"))
+	tk.MustQuery("select if((select count(distinct reason) from mysql.tidb_agent_memory_audit where tenant_id='tenant_test' and namespace='ns_test') <= 1, 1, 0)").Check(testkit.Rows("1"))
+}
+
+func TestAgentMemoryRetrievalFallbackWarning(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+
+	tk.MustQuery("select count(*) from mysql.agent_memory_for_retrieval")
+	tk.MustQuery("show warnings").Check(testkit.Rows())
+
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+
+	tk.MustQuery("select count(*) from mysql.agent_memory_for_retrieval")
+	tk.MustQuery("show warnings").Check(testkit.Rows())
+
+	tk.MustQuery("select vec_l2_distance('[1,2,3]', '[1,2,3]') from mysql.agent_memory_for_retrieval")
+	tk.MustQuery("show warnings").Check(testkit.Rows())
+
+	tk.MustQuery("select memory_id from mysql.agent_memory_for_retrieval order by vec_l2_distance(embedding, '[1,2,3]') limit 1")
+	tk.MustQuery("show warnings").Check(testkit.Rows("Warning 1105 agent-memory hybrid retrieval fallback path used: vector index optimization unavailable"))
+}
+
+func TestAgentMemoryHybridRetrievalRuntimeFusionBoundedByCandidateN(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_limit_k=2")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_candidate_n=2")
+
+	tk.MustExec(`insert into mysql.tidb_agent_memory_episodic
+		(tenant_id, namespace, subject_id, payload, embedding, importance, confidence, state, created_at)
+		values
+		('tenant_test', 'ns_test', 's1', '{"k":"s1"}', vec_from_text('[0,0,0]'), 0, 0, 'hot', '2000-01-01 00:00:00'),
+		('tenant_test', 'ns_test', 's2', '{"k":"s2"}', vec_from_text('[0.1,0,0]'), 1, 0, 'hot', now(6)),
+		('tenant_test', 'ns_test', 's3', '{"k":"s3"}', vec_from_text('[0.8,0,0]'), 1, 0, 'hot', now(6))`)
+
+	query := "select subject_id from mysql.agent_memory_for_retrieval order by vec_l2_distance(embedding, '[0,0,0]') limit 2"
+	expected := testkit.Rows("s2", "s1")
+	tk.MustQuery(query).Check(expected)
+	tk.MustQuery(query).Check(expected)
+	tk.MustQuery("show warnings").Check(testkit.Rows("Warning 1105 agent-memory hybrid retrieval fallback path used: vector index optimization unavailable"))
+}
+
+func TestAgentMemoryHybridRetrievalRuntimeFusionContextAssemblyEstimatorProjection(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_limit_k=2")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_candidate_n=2")
+
+	query := "explain format='verbose' select subject_id from mysql.agent_memory_for_retrieval order by vec_l2_distance(embedding, '[0,0,0]') limit 2"
+	containsText := func(rows [][]any, needle string) bool {
+		for _, row := range rows {
+			if strings.Contains(strings.ToLower(fmt.Sprint(row)), needle) {
+				return true
+			}
+		}
+		return false
+	}
+
+	tk.MustExec("set @@tidb_enable_agent_memory_context_assembly='OFF'")
+	rowsWithoutContextAssembly := tk.MustQuery(query).Rows()
+	require.False(t, containsText(rowsWithoutContextAssembly, "__am_estimated_tokens"))
+
+	tk.MustExec("set @@tidb_enable_agent_memory_context_assembly='ON'")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_token_estimator_strategy='provider_profile'")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_token_estimator_provider_multiplier=1.5")
+	rowsWithContextAssembly := tk.MustQuery(query).Rows()
+	require.True(t, containsText(rowsWithContextAssembly, "__am_estimated_tokens"))
+	require.True(t, containsText(rowsWithContextAssembly, "* 1.5"))
+}
+
+func TestAgentMemoryHybridRetrievalRuntimeFusionContextAssemblyRejectsInvalidEffectiveBudget(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+	tk.MustExec("set @@tidb_enable_agent_memory_context_assembly='ON'")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_total_budget_tokens=100")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_reserved_output_tokens=95")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_budget_safety_margin_ratio=0.05")
+
+	tk.MustContainErrMsg(
+		"select subject_id from mysql.agent_memory_for_retrieval order by vec_l2_distance(embedding, '[0,0,0]') limit 1",
+		"effective_budget_tokens should be positive",
+	)
+}
+
+func TestAgentMemoryHybridRetrievalRuntimeFusionContextAssemblyDropsOverBudgetCandidate(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+	tk.MustExec("set @@tidb_enable_agent_memory_context_assembly='ON'")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_limit_k=2")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_candidate_n=3")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_weight_vector=1")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_weight_recency=0")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_weight_importance=0")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_total_budget_tokens=20")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_reserved_output_tokens=5")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_budget_safety_margin_ratio=0")
+
+	tk.MustExec(`insert into mysql.tidb_agent_memory_episodic
+		(tenant_id, namespace, subject_id, payload, embedding, importance, confidence, state, created_at)
+		values
+		('tenant_test', 'ns_test', 'over_budget', repeat('x', 80), vec_from_text('[0,0,0]'), 0, 0, 'hot', now(6)),
+		('tenant_test', 'ns_test', 'fit_a', repeat('x', 40), vec_from_text('[0.1,0,0]'), 0, 0, 'hot', now(6)),
+		('tenant_test', 'ns_test', 'fit_b', repeat('x', 20), vec_from_text('[0.2,0,0]'), 0, 0, 'hot', now(6))`)
+
+	tk.MustQuery("select subject_id from mysql.agent_memory_for_retrieval order by vec_l2_distance(embedding, '[0,0,0]') limit 2").Check(testkit.Rows("fit_a", "fit_b"))
+}
+
+func TestAgentMemoryHybridRetrievalRuntimeFusionContextAssemblyDropsNonEstimableCandidate(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_limit_k=1")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_candidate_n=2")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_weight_vector=1")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_weight_recency=0")
+	tk.MustExec("set @@tidb_agent_memory_retrieve_weight_importance=0")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_total_budget_tokens=20")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_reserved_output_tokens=0")
+	tk.MustExec("set @@tidb_agent_memory_context_assembly_budget_safety_margin_ratio=0")
+
+	tk.MustExec(`insert into mysql.tidb_agent_memory_episodic
+		(tenant_id, namespace, subject_id, payload, embedding, importance, confidence, state, created_at)
+		values
+		('tenant_test', 'ns_test', 'empty_payload', '', vec_from_text('[0,0,0]'), 0, 0, 'hot', now(6)),
+		('tenant_test', 'ns_test', 'estimable_payload', repeat('x', 4), vec_from_text('[0.1,0,0]'), 0, 0, 'hot', now(6))`)
+
+	query := "select subject_id from mysql.agent_memory_for_retrieval order by vec_l2_distance(embedding, '[0,0,0]') limit 1"
+	tk.MustExec("set @@tidb_enable_agent_memory_context_assembly='OFF'")
+	tk.MustQuery(query).Check(testkit.Rows("empty_payload"))
+
+	tk.MustExec("set @@tidb_enable_agent_memory_context_assembly='ON'")
+	tk.MustQuery(query).Check(testkit.Rows("estimable_payload"))
+}
+
+func TestAgentMemoryRetrievalFallbackWarningOnExecute(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+	tk.MustExec("prepare stmt from 'select count(*) from mysql.agent_memory_for_retrieval'")
+
+	tk.MustQuery("execute stmt")
+	warns := tk.Session().GetSessionVars().StmtCtx.GetWarnings()
+	found := false
+	for _, warn := range warns {
+		if strings.Contains(warn.Err.Error(), "agent-memory hybrid retrieval fallback path used: vector index optimization unavailable") {
+			found = true
+			break
+		}
+	}
+	require.False(t, found)
+}
+
+func TestAgentMemoryRetrievalFallbackWarningOnExecuteVectorDistance(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+	tk.MustExec(`prepare stmt_vec from 'select memory_id from mysql.agent_memory_for_retrieval order by vec_l2_distance(embedding, ''[1,2,3]'') limit 1'`)
+
+	tk.MustQuery("execute stmt_vec")
+	warns := tk.Session().GetSessionVars().StmtCtx.GetWarnings()
+	found := false
+	for _, warn := range warns {
+		if strings.Contains(warn.Err.Error(), "agent-memory hybrid retrieval fallback path used: vector index optimization unavailable") {
+			found = true
+			break
+		}
+	}
+	require.True(t, found)
+}
+
+func TestAgentMemoryRetrievalFallbackWarningNotForConstantDistance(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+
+	tk.MustQuery("select memory_id from mysql.agent_memory_for_retrieval order by vec_l2_distance('[1,2,3]', '[1,2,3]') limit 1")
+	tk.MustQuery("show warnings").Check(testkit.Rows())
+}
+
+func TestAgentMemoryRetrievalFallbackWarningDeduplicated(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+
+	tk.MustQuery("select a.memory_id from mysql.agent_memory_for_retrieval a join mysql.agent_memory_for_retrieval b on a.memory_id = b.memory_id order by vec_l2_distance(a.embedding, '[1,2,3]') limit 1")
+	tk.MustQuery("show warnings").Check(testkit.Rows("Warning 1105 agent-memory hybrid retrieval fallback path used: vector index optimization unavailable"))
+}
+
+func TestAgentMemoryRetrievalFallbackWarningOnSetOpr(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+
+	tk.MustQuery("(select memory_id, embedding from mysql.agent_memory_for_retrieval) union all (select memory_id, embedding from mysql.agent_memory_for_retrieval) order by vec_l2_distance(embedding, '[1,2,3]') limit 1")
+	tk.MustQuery("show warnings").Check(testkit.Rows("Warning 1105 agent-memory hybrid retrieval fallback path used: vector index optimization unavailable"))
+}
+
+func TestAgentMemoryRetrievalFallbackWarningOnSetOprConstantDistance(t *testing.T) {
+	store := testkit.CreateMockStore(t)
+	tk := testkit.NewTestKit(t, store)
+	tk.MustExec("use mysql")
+	tk.MustExec("set @@tidb_agent_tenant_id='tenant_test'")
+	tk.MustExec("set @@tidb_agent_namespace='ns_test'")
+	tk.MustExec("set @@tidb_enable_agent_memory_hybrid_retrieval='ON'")
+
+	tk.MustQuery("(select memory_id, embedding from mysql.agent_memory_for_retrieval) union all (select memory_id, embedding from mysql.agent_memory_for_retrieval) order by vec_l2_distance('[1,2,3]', '[1,2,3]') limit 1")
+	tk.MustQuery("show warnings").Check(testkit.Rows())
 }

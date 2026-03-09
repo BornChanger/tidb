@@ -104,6 +104,86 @@ func newExecConcurrencySysVar(name string, defValue int, setter concurrencySette
 	return sv
 }
 
+const (
+	agentMemoryRetrieveWeightSumTolerance    = 1e-6
+	agentMemoryRetrieveCandidateNHardMax     = 10000
+	agentMemoryTokenEstimatorApproxCharBased = "approx_char_based"
+	agentMemoryTokenEstimatorProviderProfile = "provider_profile"
+)
+
+func parseAgentMemoryWeightFromSession(vars *SessionVars, name string, def float64) float64 {
+	val, ok := vars.GetSystemVar(name)
+	if !ok {
+		return def
+	}
+	v, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+func parseAgentMemoryIntFromSession(vars *SessionVars, name string, def int) int64 {
+	val, ok := vars.GetSystemVar(name)
+	if !ok {
+		return int64(def)
+	}
+	v, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64)
+	if err != nil {
+		return int64(def)
+	}
+	return v
+}
+
+func validateAgentMemoryContextAssemblyBudget(vars *SessionVars, currentVar string, currentValue int64) error {
+	totalBudget := parseAgentMemoryIntFromSession(vars, vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens, vardef.DefTiDBAgentMemoryContextAssemblyTotalBudgetTokens)
+	reservedOutput := parseAgentMemoryIntFromSession(vars, vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens, vardef.DefTiDBAgentMemoryContextAssemblyReservedOutputTokens)
+
+	switch currentVar {
+	case vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens:
+		totalBudget = currentValue
+	case vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens:
+		reservedOutput = currentValue
+	}
+
+	if totalBudget <= 0 {
+		return errors.Errorf("%s should be positive", vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens)
+	}
+	if reservedOutput < 0 {
+		return errors.Errorf("%s should be non-negative", vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens)
+	}
+	if reservedOutput >= totalBudget {
+		return errors.Errorf("%s should be less than %s", vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens, vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens)
+	}
+	return nil
+}
+
+func validateAgentMemoryRetrieveWeightSum(vars *SessionVars, currentVar string, currentWeight float64) error {
+	vectorWeight := parseAgentMemoryWeightFromSession(vars, vardef.TiDBAgentMemoryRetrieveWeightVector, vardef.DefTiDBAgentMemoryRetrieveWeightVector)
+	recencyWeight := parseAgentMemoryWeightFromSession(vars, vardef.TiDBAgentMemoryRetrieveWeightRecency, vardef.DefTiDBAgentMemoryRetrieveWeightRecency)
+	importanceWeight := parseAgentMemoryWeightFromSession(vars, vardef.TiDBAgentMemoryRetrieveWeightImportance, vardef.DefTiDBAgentMemoryRetrieveWeightImportance)
+
+	switch currentVar {
+	case vardef.TiDBAgentMemoryRetrieveWeightVector:
+		vectorWeight = currentWeight
+	case vardef.TiDBAgentMemoryRetrieveWeightRecency:
+		recencyWeight = currentWeight
+	case vardef.TiDBAgentMemoryRetrieveWeightImportance:
+		importanceWeight = currentWeight
+	}
+
+	sum := vectorWeight + recencyWeight + importanceWeight
+	if math.Abs(sum-1) > agentMemoryRetrieveWeightSumTolerance {
+		return errors.Errorf("sum of %s, %s and %s should be 1.0, got %v",
+			vardef.TiDBAgentMemoryRetrieveWeightVector,
+			vardef.TiDBAgentMemoryRetrieveWeightRecency,
+			vardef.TiDBAgentMemoryRetrieveWeightImportance,
+			sum,
+		)
+	}
+	return nil
+}
+
 // All system variables declared here are ordered by their scopes, which follow the order of scopes below:
 //
 //	[NONE, SESSION, INSTANCE, GLOBAL, GLOBAL & SESSION]
@@ -3704,6 +3784,198 @@ var defaultSysVars = []*SysVar{
 		}, GetGlobal: func(ctx context.Context, vars *SessionVars) (string, error) {
 			return vardef.ServiceScope.Load(), nil
 		}},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentTenantID, Value: vardef.DefTiDBAgentTenantID, Type: vardef.TypeStr},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentNamespace, Value: vardef.DefTiDBAgentNamespace, Type: vardef.TypeStr},
+	{Scope: vardef.ScopeGlobal | vardef.ScopeSession, Name: vardef.TiDBEnableAgentMemoryHybridRetrieval, Value: BoolToOnOff(vardef.DefTiDBEnableAgentMemoryHybridRetrieval), Type: vardef.TypeBool},
+	{Scope: vardef.ScopeGlobal | vardef.ScopeSession, Name: vardef.TiDBEnableAgentMemoryContextAssembly, Value: BoolToOnOff(vardef.DefTiDBEnableAgentMemoryContextAssembly), Type: vardef.TypeBool},
+	{Scope: vardef.ScopeGlobal | vardef.ScopeSession, Name: vardef.TiDBEnableAgentMemoryLifecycleScheduler, Value: BoolToOnOff(vardef.DefTiDBEnableAgentMemoryLifecycleScheduler), Type: vardef.TypeBool},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryRetrieveCandidateN, Value: strconv.Itoa(vardef.DefTiDBAgentMemoryRetrieveCandidateN), Type: vardef.TypeUnsigned, MinValue: 1, MaxValue: math.MaxInt32,
+		Validation: func(vars *SessionVars, normalizedValue string, _ string, _ vardef.ScopeFlag) (string, error) {
+			candidateN := TidbOptInt64(normalizedValue, vardef.DefTiDBAgentMemoryRetrieveCandidateN)
+			if candidateN > agentMemoryRetrieveCandidateNHardMax {
+				return normalizedValue, errors.Errorf("%s should be less than or equal to %d", vardef.TiDBAgentMemoryRetrieveCandidateN, agentMemoryRetrieveCandidateNHardMax)
+			}
+			limitKVal, ok := vars.GetSystemVar(vardef.TiDBAgentMemoryRetrieveLimitK)
+			if !ok {
+				limitKVal = strconv.Itoa(vardef.DefTiDBAgentMemoryRetrieveLimitK)
+			}
+			limitK := TidbOptInt64(limitKVal, vardef.DefTiDBAgentMemoryRetrieveLimitK)
+			if candidateN < limitK {
+				return normalizedValue, errors.Errorf("%s should be greater than or equal to %s", vardef.TiDBAgentMemoryRetrieveCandidateN, vardef.TiDBAgentMemoryRetrieveLimitK)
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryRetrieveLimitK, Value: strconv.Itoa(vardef.DefTiDBAgentMemoryRetrieveLimitK), Type: vardef.TypeUnsigned, MinValue: 1, MaxValue: math.MaxInt32,
+		Validation: func(vars *SessionVars, normalizedValue string, _ string, _ vardef.ScopeFlag) (string, error) {
+			limitK := TidbOptInt64(normalizedValue, vardef.DefTiDBAgentMemoryRetrieveLimitK)
+			candidateNVal, ok := vars.GetSystemVar(vardef.TiDBAgentMemoryRetrieveCandidateN)
+			if !ok {
+				candidateNVal = strconv.Itoa(vardef.DefTiDBAgentMemoryRetrieveCandidateN)
+			}
+			candidateN := TidbOptInt64(candidateNVal, vardef.DefTiDBAgentMemoryRetrieveCandidateN)
+			if limitK > candidateN {
+				return normalizedValue, errors.Errorf("%s should be less than or equal to %s", vardef.TiDBAgentMemoryRetrieveLimitK, vardef.TiDBAgentMemoryRetrieveCandidateN)
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryRetrieveRecencyHalfLifeSeconds, Value: strconv.Itoa(vardef.DefTiDBAgentMemoryRetrieveRecencyHalfLifeSeconds), Type: vardef.TypeUnsigned, MinValue: 1, MaxValue: math.MaxInt32},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryRetrieveWeightVector, Value: strconv.FormatFloat(vardef.DefTiDBAgentMemoryRetrieveWeightVector, 'f', -1, 64), Type: vardef.TypeFloat, MinValue: 0, MaxValue: 1,
+		Validation: func(vars *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			weight, err := strconv.ParseFloat(strings.TrimSpace(originalValue), 64)
+			if err != nil {
+				weight, err = strconv.ParseFloat(normalizedValue, 64)
+				if err != nil {
+					return normalizedValue, err
+				}
+			}
+			if weight < 0 || weight > 1 {
+				return normalizedValue, errors.Errorf("%s should be in range [0,1]", vardef.TiDBAgentMemoryRetrieveWeightVector)
+			}
+			if err := validateAgentMemoryRetrieveWeightSum(vars, vardef.TiDBAgentMemoryRetrieveWeightVector, weight); err != nil {
+				return normalizedValue, err
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryRetrieveWeightRecency, Value: strconv.FormatFloat(vardef.DefTiDBAgentMemoryRetrieveWeightRecency, 'f', -1, 64), Type: vardef.TypeFloat, MinValue: 0, MaxValue: 1,
+		Validation: func(vars *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			weight, err := strconv.ParseFloat(strings.TrimSpace(originalValue), 64)
+			if err != nil {
+				weight, err = strconv.ParseFloat(normalizedValue, 64)
+				if err != nil {
+					return normalizedValue, err
+				}
+			}
+			if weight < 0 || weight > 1 {
+				return normalizedValue, errors.Errorf("%s should be in range [0,1]", vardef.TiDBAgentMemoryRetrieveWeightRecency)
+			}
+			if err := validateAgentMemoryRetrieveWeightSum(vars, vardef.TiDBAgentMemoryRetrieveWeightRecency, weight); err != nil {
+				return normalizedValue, err
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryRetrieveWeightImportance, Value: strconv.FormatFloat(vardef.DefTiDBAgentMemoryRetrieveWeightImportance, 'f', -1, 64), Type: vardef.TypeFloat, MinValue: 0, MaxValue: 1,
+		Validation: func(vars *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			weight, err := strconv.ParseFloat(strings.TrimSpace(originalValue), 64)
+			if err != nil {
+				weight, err = strconv.ParseFloat(normalizedValue, 64)
+				if err != nil {
+					return normalizedValue, err
+				}
+			}
+			if weight < 0 || weight > 1 {
+				return normalizedValue, errors.Errorf("%s should be in range [0,1]", vardef.TiDBAgentMemoryRetrieveWeightImportance)
+			}
+			if err := validateAgentMemoryRetrieveWeightSum(vars, vardef.TiDBAgentMemoryRetrieveWeightImportance, weight); err != nil {
+				return normalizedValue, err
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy, Value: vardef.DefTiDBAgentMemoryContextAssemblyTokenEstimatorStrategy, Type: vardef.TypeStr,
+		Validation: func(_ *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			strategy := strings.ToLower(strings.TrimSpace(originalValue))
+			if strategy == "" {
+				strategy = strings.ToLower(strings.TrimSpace(normalizedValue))
+			}
+			switch strategy {
+			case agentMemoryTokenEstimatorApproxCharBased, agentMemoryTokenEstimatorProviderProfile:
+				return strategy, nil
+			default:
+				return normalizedValue, errors.Errorf("%s should be either '%s' or '%s'",
+					vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorStrategy,
+					agentMemoryTokenEstimatorApproxCharBased,
+					agentMemoryTokenEstimatorProviderProfile,
+				)
+			}
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier, Value: strconv.FormatFloat(vardef.DefTiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier, 'f', -1, 64), Type: vardef.TypeFloat, MinValue: 0, MaxValue: math.MaxInt32,
+		Validation: func(_ *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			multiplier, err := strconv.ParseFloat(strings.TrimSpace(originalValue), 64)
+			if err != nil {
+				multiplier, err = strconv.ParseFloat(normalizedValue, 64)
+				if err != nil {
+					return normalizedValue, err
+				}
+			}
+			if multiplier <= 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
+				return normalizedValue, errors.Errorf("%s should be positive and finite", vardef.TiDBAgentMemoryContextAssemblyTokenEstimatorProviderMultiplier)
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens, Value: strconv.Itoa(vardef.DefTiDBAgentMemoryContextAssemblyTotalBudgetTokens), Type: vardef.TypeUnsigned, MinValue: 1, MaxValue: math.MaxInt32,
+		Validation: func(vars *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			totalBudget, err := strconv.ParseInt(strings.TrimSpace(originalValue), 10, 64)
+			if err != nil {
+				totalBudget = TidbOptInt64(normalizedValue, vardef.DefTiDBAgentMemoryContextAssemblyTotalBudgetTokens)
+			}
+			if err := validateAgentMemoryContextAssemblyBudget(vars, vardef.TiDBAgentMemoryContextAssemblyTotalBudgetTokens, totalBudget); err != nil {
+				return normalizedValue, err
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens, Value: strconv.Itoa(vardef.DefTiDBAgentMemoryContextAssemblyReservedOutputTokens), Type: vardef.TypeUnsigned, MinValue: 0, MaxValue: math.MaxInt32,
+		Validation: func(vars *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			reservedOutput, err := strconv.ParseInt(strings.TrimSpace(originalValue), 10, 64)
+			if err != nil {
+				reservedOutput = TidbOptInt64(normalizedValue, vardef.DefTiDBAgentMemoryContextAssemblyReservedOutputTokens)
+			}
+			if err := validateAgentMemoryContextAssemblyBudget(vars, vardef.TiDBAgentMemoryContextAssemblyReservedOutputTokens, reservedOutput); err != nil {
+				return normalizedValue, err
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio, Value: strconv.FormatFloat(vardef.DefTiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio, 'f', -1, 64), Type: vardef.TypeFloat, MinValue: 0, MaxValue: 1,
+		Validation: func(_ *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			ratio, err := strconv.ParseFloat(strings.TrimSpace(originalValue), 64)
+			if err != nil {
+				ratio, err = strconv.ParseFloat(normalizedValue, 64)
+				if err != nil {
+					return normalizedValue, err
+				}
+			}
+			if ratio < 0 || ratio >= 1 || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+				return normalizedValue, errors.Errorf("%s should be in range [0,1)", vardef.TiDBAgentMemoryContextAssemblyBudgetSafetyMarginRatio)
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeGlobal | vardef.ScopeSession, Name: vardef.TiDBAgentMemoryTraceEnable, Value: BoolToOnOff(vardef.DefTiDBAgentMemoryTraceEnable), Type: vardef.TypeBool},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryTraceSampleRatio, Value: strconv.FormatFloat(vardef.DefTiDBAgentMemoryTraceSampleRatio, 'f', -1, 64), Type: vardef.TypeFloat, MinValue: 0, MaxValue: 1,
+		Validation: func(_ *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			ratio, err := strconv.ParseFloat(strings.TrimSpace(originalValue), 64)
+			if err != nil {
+				ratio, err = strconv.ParseFloat(normalizedValue, 64)
+				if err != nil {
+					return normalizedValue, err
+				}
+			}
+			if ratio < 0 || ratio > 1 {
+				return normalizedValue, errors.Errorf("%s should be in range [0,1]", vardef.TiDBAgentMemoryTraceSampleRatio)
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeSession, Name: vardef.TiDBAgentMemoryTraceMaxItems, Value: strconv.Itoa(vardef.DefTiDBAgentMemoryTraceMaxItems), Type: vardef.TypeUnsigned, MinValue: 1, MaxValue: math.MaxInt32,
+		Validation: func(_ *SessionVars, normalizedValue string, originalValue string, _ vardef.ScopeFlag) (string, error) {
+			items, err := strconv.ParseInt(strings.TrimSpace(originalValue), 10, 64)
+			if err != nil {
+				items = TidbOptInt64(normalizedValue, vardef.DefTiDBAgentMemoryTraceMaxItems)
+			}
+			if items < 1 {
+				return normalizedValue, errors.Errorf("%s should be greater than or equal to 1", vardef.TiDBAgentMemoryTraceMaxItems)
+			}
+			return normalizedValue, nil
+		},
+	},
+	{Scope: vardef.ScopeGlobal | vardef.ScopeSession, Name: vardef.TiDBAgentMemoryTraceCapturePayload, Value: BoolToOnOff(vardef.DefTiDBAgentMemoryTraceCapturePayload), Type: vardef.TypeBool},
 	{Scope: vardef.ScopeGlobal, Name: vardef.TiDBSchemaVersionCacheLimit, Value: strconv.Itoa(vardef.DefTiDBSchemaVersionCacheLimit), Type: vardef.TypeInt, MinValue: 2, MaxValue: math.MaxUint8, AllowEmpty: true,
 		SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
 			vardef.SchemaVersionCacheLimit.Store(TidbOptInt64(val, vardef.DefTiDBSchemaVersionCacheLimit))

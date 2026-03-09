@@ -791,6 +791,172 @@ const (
 		value json NOT NULL,
 		index idx_version_category_type (version, category, type),
 		index idx_table_id (table_id));`
+
+	// CreateTiDBAgentMemoryProfileVersionTable stores profile versions for agent memory context per tenant/namespace/profile.
+	CreateTiDBAgentMemoryProfileVersionTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_profile_version (
+		tenant_id varchar(128) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		profile_name varchar(128) NOT NULL,
+		profile_version bigint(20) unsigned NOT NULL DEFAULT 0,
+		etag varchar(128) NOT NULL DEFAULT '',
+		updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		PRIMARY KEY (tenant_id, namespace, profile_name),
+		KEY idx_updated_at (updated_at));`
+
+	// CreateTiDBAgentMemoryEpisodicTable stores episodic memories.
+	CreateTiDBAgentMemoryEpisodicTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_episodic (
+		memory_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+		tenant_id varchar(64) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		subject_id varchar(128) NOT NULL,
+		payload json NOT NULL,
+		embedding longblob,
+		importance double NOT NULL DEFAULT 0,
+		confidence double NOT NULL DEFAULT 0,
+		state enum('hot','warm','cold','archived') NOT NULL DEFAULT 'hot',
+		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+		expires_at timestamp(6) NULL DEFAULT NULL,
+		provenance json DEFAULT NULL,
+		quality json DEFAULT NULL,
+		PRIMARY KEY (memory_id),
+		KEY idx_tenant_namespace_subject_created (tenant_id, namespace, subject_id, created_at),
+		KEY idx_tenant_namespace_state (tenant_id, namespace, state));`
+
+	// CreateTiDBAgentMemorySemanticTable stores semantic memories.
+	CreateTiDBAgentMemorySemanticTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_semantic (
+		memory_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+		tenant_id varchar(64) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		subject_id varchar(128) NOT NULL,
+		payload json NOT NULL,
+		embedding longblob,
+		importance double NOT NULL DEFAULT 0,
+		confidence double NOT NULL DEFAULT 0,
+		state enum('hot','warm','cold','archived') NOT NULL DEFAULT 'hot',
+		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+		expires_at timestamp(6) NULL DEFAULT NULL,
+		provenance json DEFAULT NULL,
+		quality json DEFAULT NULL,
+		PRIMARY KEY (memory_id),
+		KEY idx_tenant_namespace_subject_created (tenant_id, namespace, subject_id, created_at),
+		KEY idx_tenant_namespace_state (tenant_id, namespace, state));`
+
+	// CreateTiDBAgentMemoryProceduralTable stores procedural memories.
+	CreateTiDBAgentMemoryProceduralTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_procedural (
+		memory_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+		tenant_id varchar(64) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		subject_id varchar(128) NOT NULL,
+		payload json NOT NULL,
+		embedding longblob,
+		importance double NOT NULL DEFAULT 0,
+		confidence double NOT NULL DEFAULT 0,
+		state enum('hot','warm','cold','archived') NOT NULL DEFAULT 'hot',
+		created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+		expires_at timestamp(6) NULL DEFAULT NULL,
+		provenance json DEFAULT NULL,
+		quality json DEFAULT NULL,
+		PRIMARY KEY (memory_id),
+		KEY idx_tenant_namespace_subject_created (tenant_id, namespace, subject_id, created_at),
+		KEY idx_tenant_namespace_state (tenant_id, namespace, state));`
+
+	// CreateTiDBAgentMemoryAuditTable stores baseline audit records for memory operations.
+	CreateTiDBAgentMemoryAuditTable = `CREATE TABLE IF NOT EXISTS mysql.tidb_agent_memory_audit (
+		audit_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+		tenant_id varchar(128) NOT NULL,
+		namespace varchar(128) NOT NULL,
+		actor varchar(128) NOT NULL DEFAULT '',
+		action enum('read','write','delete','policy_denied') NOT NULL,
+		object_type varchar(64) NOT NULL,
+		object_id varchar(128) NOT NULL DEFAULT '',
+		reason varchar(256) NOT NULL DEFAULT '',
+		event_time timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+		PRIMARY KEY (audit_id),
+		KEY idx_tenant_namespace_time (tenant_id, namespace, event_time),
+		KEY idx_action_time (action, event_time));`
+
+	// CreateTiDBAgentMemoryAllView provides a unified read surface for all memory classes.
+	CreateTiDBAgentMemoryAllView = `CREATE OR REPLACE SQL SECURITY INVOKER VIEW mysql.agent_memory_all AS
+		SELECT
+			'episodic' AS memory_type,
+			memory_id,
+			tenant_id,
+			namespace,
+			subject_id,
+			payload,
+			embedding,
+			importance,
+			confidence,
+			state,
+			created_at,
+			updated_at,
+			expires_at,
+			provenance,
+			quality
+		FROM mysql.tidb_agent_memory_episodic
+		UNION ALL
+		SELECT
+			'semantic' AS memory_type,
+			memory_id,
+			tenant_id,
+			namespace,
+			subject_id,
+			payload,
+			embedding,
+			importance,
+			confidence,
+			state,
+			created_at,
+			updated_at,
+			expires_at,
+			provenance,
+			quality
+		FROM mysql.tidb_agent_memory_semantic
+		UNION ALL
+		SELECT
+			'procedural' AS memory_type,
+			memory_id,
+			tenant_id,
+			namespace,
+			subject_id,
+			payload,
+			embedding,
+			importance,
+			confidence,
+			state,
+			created_at,
+			updated_at,
+			expires_at,
+			provenance,
+			quality
+		FROM mysql.tidb_agent_memory_procedural;`
+
+	// CreateTiDBAgentMemoryActiveView hides archived memories by default.
+	CreateTiDBAgentMemoryActiveView = `CREATE OR REPLACE SQL SECURITY INVOKER VIEW mysql.agent_memory_active AS
+		SELECT *
+		FROM mysql.agent_memory_all
+		WHERE state != 'archived';`
+
+	// CreateTiDBAgentMemoryForRetrievalView provides retrieval-safe projection.
+	CreateTiDBAgentMemoryForRetrievalView = `CREATE OR REPLACE SQL SECURITY INVOKER VIEW mysql.agent_memory_for_retrieval AS
+		SELECT
+			memory_type,
+			memory_id,
+			tenant_id,
+			namespace,
+			subject_id,
+			payload,
+			embedding,
+			importance,
+			confidence,
+			state,
+			created_at,
+			expires_at
+		FROM mysql.agent_memory_active;`
 )
 
 // all below are related to DDL or DXF tables

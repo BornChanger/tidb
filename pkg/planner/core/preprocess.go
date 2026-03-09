@@ -41,6 +41,7 @@ import (
 	"github.com/pingcap/tidb/pkg/planner/core/resolve"
 	"github.com/pingcap/tidb/pkg/privilege"
 	"github.com/pingcap/tidb/pkg/sessionctx"
+	"github.com/pingcap/tidb/pkg/sessionctx/vardef"
 	"github.com/pingcap/tidb/pkg/sessionctx/variable"
 	"github.com/pingcap/tidb/pkg/sessiontxn"
 	"github.com/pingcap/tidb/pkg/sessiontxn/staleread"
@@ -233,6 +234,9 @@ type preprocessor struct {
 	stmtTp byte
 	showTp ast.ShowStmtType
 
+	agentMemoryHybridRetrievalRequested bool
+	agentMemoryFallbackWarningEmitted   bool
+
 	// tableAliasInJoin is a stack that keeps the table alias names for joins.
 	// len(tableAliasInJoin) may bigger than 1 because the left/right child of join may be subquery that contains `JOIN`
 	tableAliasInJoin []map[string]any
@@ -258,11 +262,13 @@ func (p *preprocessor) Enter(in ast.Node) (out ast.Node, skipChildren bool) {
 		p.stmtTp = TypeDelete
 	case *ast.SelectStmt:
 		p.stmtTp = TypeSelect
+		p.agentMemoryHybridRetrievalRequested = p.agentMemoryHybridRetrievalRequested || selectHasAgentMemoryHybridRetrievalShape(node)
 		if node.With != nil {
 			p.preprocessWith.cteStack = append(p.preprocessWith.cteStack, node.With.CTEs)
 		}
 		p.checkSelectNoopFuncs(node)
 	case *ast.SetOprStmt:
+		p.agentMemoryHybridRetrievalRequested = p.agentMemoryHybridRetrievalRequested || setOprHasAgentMemoryHybridRetrievalShape(node)
 		if node.With != nil {
 			p.preprocessWith.cteStack = append(p.preprocessWith.cteStack, node.With.CTEs)
 		}
@@ -1767,6 +1773,10 @@ func (p *preprocessor) handleTableName(tn *ast.TableName) {
 		}
 	}
 
+	if p.err = p.checkAgentMemoryTenantContext(tn); p.err != nil {
+		return
+	}
+
 	table, err := p.tableByName(tn)
 	if err != nil {
 		p.err = err
@@ -1795,6 +1805,298 @@ func (p *preprocessor) handleTableName(tn *ast.TableName) {
 		DBInfo:    dbInfo,
 		TableInfo: tableInfo,
 	})
+}
+
+func isAgentMemoryProtectedTable(schema, table string) bool {
+	if schema != mysql.SystemDB {
+		return false
+	}
+	switch table {
+	case "tidb_agent_memory_profile_version", "tidb_agent_memory_episodic", "tidb_agent_memory_semantic", "tidb_agent_memory_procedural", "tidb_agent_memory_audit",
+		"agent_memory_all", "agent_memory_active", "agent_memory_for_retrieval":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAgentMemoryRetrievalTable(schema, table string) bool {
+	return schema == mysql.SystemDB && table == "agent_memory_for_retrieval"
+}
+
+func (p *preprocessor) checkAgentMemoryTenantContext(tn *ast.TableName) error {
+	if p.sctx.GetSessionVars().InRestrictedSQL {
+		return nil
+	}
+	if !isAgentMemoryProtectedTable(tn.Schema.L, tn.Name.L) {
+		return nil
+	}
+	tenantID, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBAgentTenantID)
+	namespace, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBAgentNamespace)
+	if tenantID == "" || namespace == "" {
+		p.recordAgentMemoryAudit(tn, tenantID, namespace, "policy_denied", "missing_tenant_or_namespace_context")
+		return plannererrors.ErrSpecificAccessDenied.GenWithStackByArgs("AGENT_MEMORY_TENANT_CONTEXT")
+	}
+	action := p.agentMemoryAuditAction()
+	if action != "" {
+		p.recordAgentMemoryAudit(tn, tenantID, namespace, action, "")
+	}
+	p.appendAgentMemoryRetrievalFallbackWarningIfNeeded(tn)
+	return nil
+}
+
+func (p *preprocessor) appendAgentMemoryRetrievalFallbackWarningIfNeeded(tn *ast.TableName) {
+	if p.sctx.GetSessionVars().InRestrictedSQL {
+		return
+	}
+	if p.agentMemoryFallbackWarningEmitted {
+		return
+	}
+	if p.agentMemoryAuditAction() != "read" || !isAgentMemoryRetrievalTable(tn.Schema.L, tn.Name.L) {
+		return
+	}
+	if !p.agentMemoryHybridRetrievalRequested {
+		return
+	}
+	enableHybridRetrieval, _ := p.sctx.GetSessionVars().GetSystemVar(vardef.TiDBEnableAgentMemoryHybridRetrieval)
+	if !variable.TiDBOptOn(enableHybridRetrieval) {
+		return
+	}
+	if hasAgentMemoryVectorIndex(p.ensureInfoSchema()) {
+		return
+	}
+	p.sctx.GetSessionVars().StmtCtx.AppendWarning(errors.NewNoStackError("agent-memory hybrid retrieval fallback path used: vector index optimization unavailable"))
+	p.agentMemoryFallbackWarningEmitted = true
+}
+
+type agentMemoryVectorDistanceDetector struct {
+	found bool
+}
+
+func (d *agentMemoryVectorDistanceDetector) Enter(in ast.Node) (ast.Node, bool) {
+	if d.found {
+		return in, true
+	}
+	if fn, ok := in.(*ast.FuncCallExpr); ok && isAgentMemoryVectorDistanceFunc(fn.FnName.L) {
+		d.found = true
+		return in, true
+	}
+	return in, false
+}
+
+func (d *agentMemoryVectorDistanceDetector) Leave(in ast.Node) (ast.Node, bool) {
+	return in, !d.found
+}
+
+func hasAgentMemoryVectorDistanceFunc(node ast.Node) bool {
+	if node == nil {
+		return false
+	}
+	detector := &agentMemoryVectorDistanceDetector{}
+	node.Accept(detector)
+	return detector.found
+}
+
+func selectHasAgentMemoryHybridRetrievalShape(node *ast.SelectStmt) bool {
+	if node == nil || node.OrderBy == nil || node.Limit == nil {
+		return false
+	}
+	return orderByContainsAgentMemoryVectorDistanceFunc(node.OrderBy)
+}
+
+func setOprHasAgentMemoryHybridRetrievalShape(node *ast.SetOprStmt) bool {
+	if node == nil || node.OrderBy == nil || node.Limit == nil {
+		return false
+	}
+	return orderByContainsAgentMemoryVectorDistanceFunc(node.OrderBy)
+}
+
+func orderByContainsAgentMemoryVectorDistanceFunc(orderBy *ast.OrderByClause) bool {
+	if orderBy == nil {
+		return false
+	}
+	for _, item := range orderBy.Items {
+		if item == nil || item.Expr == nil {
+			continue
+		}
+		if hasAgentMemoryVectorDistanceOnEmbedding(item.Expr) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAgentMemoryVectorDistanceOnEmbedding(node ast.Node) bool {
+	if node == nil {
+		return false
+	}
+	detector := &agentMemoryVectorDistanceOnEmbeddingDetector{}
+	node.Accept(detector)
+	return detector.found
+}
+
+type agentMemoryVectorDistanceOnEmbeddingDetector struct {
+	found bool
+}
+
+func (d *agentMemoryVectorDistanceOnEmbeddingDetector) Enter(in ast.Node) (ast.Node, bool) {
+	if d.found {
+		return in, true
+	}
+	fn, ok := in.(*ast.FuncCallExpr)
+	if !ok {
+		return in, false
+	}
+	if !isAgentMemoryVectorDistanceFunc(fn.FnName.L) {
+		return in, false
+	}
+	if !agentMemoryVectorDistanceUsesEmbeddingColumn(fn) {
+		return in, true
+	}
+	d.found = true
+	return in, true
+}
+
+func (d *agentMemoryVectorDistanceOnEmbeddingDetector) Leave(in ast.Node) (ast.Node, bool) {
+	return in, !d.found
+}
+
+func agentMemoryVectorDistanceUsesEmbeddingColumn(fn *ast.FuncCallExpr) bool {
+	for _, arg := range fn.Args {
+		if hasAgentMemoryEmbeddingColumn(arg) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAgentMemoryEmbeddingColumn(node ast.Node) bool {
+	if node == nil {
+		return false
+	}
+	detector := &agentMemoryEmbeddingColumnDetector{}
+	node.Accept(detector)
+	return detector.found
+}
+
+type agentMemoryEmbeddingColumnDetector struct {
+	found bool
+}
+
+func (d *agentMemoryEmbeddingColumnDetector) Enter(in ast.Node) (ast.Node, bool) {
+	if d.found {
+		return in, true
+	}
+	col, ok := in.(*ast.ColumnNameExpr)
+	if !ok {
+		return in, false
+	}
+	if col.Name.Name.L == "embedding" {
+		d.found = true
+		return in, true
+	}
+	return in, true
+}
+
+func (d *agentMemoryEmbeddingColumnDetector) Leave(in ast.Node) (ast.Node, bool) {
+	return in, !d.found
+}
+
+type agentMemoryHybridRetrievalShapeDetector struct {
+	found bool
+}
+
+func (d *agentMemoryHybridRetrievalShapeDetector) Enter(in ast.Node) (ast.Node, bool) {
+	if d.found {
+		return in, true
+	}
+	switch x := in.(type) {
+	case *ast.SelectStmt:
+		if selectHasAgentMemoryHybridRetrievalShape(x) {
+			d.found = true
+			return in, true
+		}
+	case *ast.SetOprStmt:
+		if setOprHasAgentMemoryHybridRetrievalShape(x) {
+			d.found = true
+			return in, true
+		}
+	}
+	return in, false
+}
+
+func (d *agentMemoryHybridRetrievalShapeDetector) Leave(in ast.Node) (ast.Node, bool) {
+	return in, !d.found
+}
+
+func hasAgentMemoryHybridRetrievalShape(node ast.Node) bool {
+	if node == nil {
+		return false
+	}
+	detector := &agentMemoryHybridRetrievalShapeDetector{}
+	node.Accept(detector)
+	return detector.found
+}
+
+func isAgentMemoryVectorDistanceFunc(name string) bool {
+	switch name {
+	case ast.VecCosineDistance, ast.VecL1Distance, ast.VecL2Distance:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasAgentMemoryVectorIndex(is infoschema.InfoSchema) bool {
+	for _, tblName := range []string{"tidb_agent_memory_episodic", "tidb_agent_memory_semantic", "tidb_agent_memory_procedural"} {
+		tbl, err := is.TableByName(context.Background(), ast.NewCIStr(mysql.SystemDB), ast.NewCIStr(tblName))
+		if err != nil {
+			continue
+		}
+		for _, idx := range tbl.Meta().Indices {
+			if idx != nil && idx.VectorInfo != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (p *preprocessor) agentMemoryAuditAction() string {
+	switch p.stmtTp {
+	case TypeSelect, TypeSetOpr:
+		return "read"
+	case TypeExecute:
+		return "read"
+	case TypeInsert, TypeUpdate:
+		return "write"
+	case TypeDelete:
+		return "delete"
+	default:
+		return ""
+	}
+}
+
+func (p *preprocessor) recordAgentMemoryAudit(tn *ast.TableName, tenantID, namespace, action, reason string) {
+	exec := p.sctx.GetRestrictedSQLExecutor()
+	if exec == nil {
+		return
+	}
+	if tenantID == "" {
+		tenantID = "__missing__"
+	}
+	if namespace == "" {
+		namespace = "__missing__"
+	}
+	actor := ""
+	if user := p.sctx.GetSessionVars().User; user != nil {
+		actor = user.String()
+	}
+	ctx := kv.WithInternalSourceType(context.Background(), kv.InternalTxnOthers)
+	_, _, _ = exec.ExecRestrictedSQL(ctx, nil,
+		"INSERT INTO mysql.tidb_agent_memory_audit (tenant_id, namespace, actor, action, object_type, object_id, reason) VALUES (%?, %?, %?, %?, 'table', %?, %?)",
+		tenantID, namespace, actor, action, fmt.Sprintf("%s.%s", tn.Schema.L, tn.Name.L), reason,
+	)
 }
 
 func (p *preprocessor) checkNotInRepair(tn *ast.TableName) {
@@ -1854,6 +2156,16 @@ func (p *preprocessor) resolveExecuteStmt(node *ast.ExecuteStmt) {
 	if err != nil {
 		p.err = err
 		return
+	}
+	if prepared.PreparedAst != nil {
+		p.agentMemoryHybridRetrievalRequested = hasAgentMemoryHybridRetrievalShape(prepared.PreparedAst.Stmt)
+	}
+	if prepared.ResolveCtx != nil {
+		for tableName := range prepared.ResolveCtx.GetTableNames() {
+			if p.err = p.checkAgentMemoryTenantContext(tableName); p.err != nil {
+				return
+			}
+		}
 	}
 
 	if p.err = p.staleReadProcessor.OnExecutePreparedStmt(prepared.SnapshotTSEvaluator); p.err == nil {
